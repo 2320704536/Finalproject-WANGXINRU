@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
-from PIL import Image, ImageFilter, ImageDraw
-import matplotlib.pyplot as plt  # kept for consistency in env
+from PIL import Image, ImageFilter
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
@@ -59,26 +58,26 @@ def fetch_news(api_key, keyword="technology", page_size=50):
 # Planetary Palette (soft, natural)
 # =========================
 DEFAULT_RGB = {
-    "joy":        (230, 200, 110),  # Warm Jupiter Gold
-    "love":       (235, 180, 175),  # Venus Rose
-    "pride":      (200, 170, 210),  # Saturn Violet
-    "hope":       (160, 220, 200),  # Uranus Mint
-    "curiosity":  (175, 210, 200),  # Soft Turquoise
-    "calm":       (140, 180, 230),  # Neptune Blue
-    "surprise":   (240, 190, 150),  # Dawn Peach
-    "neutral":    (180, 180, 185),  # Lunar Gray
-    "sadness":    (100, 130, 180),  # Deep Ocean Blue
-    "anger":      (180, 80, 70),    # Mars Red
-    "fear":       (130, 110, 160),  # Shadow Purple
-    "disgust":    (130, 140, 110),  # Olive Gray
-    "anxiety":    (210, 190, 140),  # Desert Sand
-    "boredom":    (120, 120, 130),  # Slate Gray
-    "nostalgia":  (235, 220, 190),  # Pale Cream
-    "gratitude":  (175, 220, 220),  # Soft Cyan
-    "awe":        (190, 230, 240),  # Ice Blue
-    "trust":      (100, 170, 160),  # Sea Teal
-    "confusion":  (210, 170, 175),  # Dust Pink
-    "mixed":      (210, 190, 140),  # Pale Gold
+    "joy":        (230, 200, 110),
+    "love":       (235, 180, 175),
+    "pride":      (200, 170, 210),
+    "hope":       (160, 220, 200),
+    "curiosity":  (175, 210, 200),
+    "calm":       (140, 180, 230),
+    "surprise":   (240, 190, 150),
+    "neutral":    (180, 180, 185),
+    "sadness":    (100, 130, 180),
+    "anger":      (180, 80, 70),
+    "fear":       (130, 110, 160),
+    "disgust":    (130, 140, 110),
+    "anxiety":    (210, 190, 140),
+    "boredom":    (120, 120, 130),
+    "nostalgia":  (235, 220, 190),
+    "gratitude":  (175, 220, 220),
+    "awe":        (190, 230, 240),
+    "trust":      (100, 170, 160),
+    "confusion":  (210, 170, 175),
+    "mixed":      (210, 190, 140),
 }
 ALL_EMOTIONS = list(DEFAULT_RGB.keys())
 
@@ -90,7 +89,7 @@ COLOR_NAMES = {
     "awe": "Ice Blue","trust": "Sea Teal","confusion": "Dust Pink","mixed": "Pale Gold",
 }
 
-# Background themes (vertical gradient for aurora sky)
+# Background themes (top/bottom RGB floats)
 THEMES = {
     "Deep Night": ((0.02, 0.03, 0.08), (0.00, 0.00, 0.00)),
     "Polar Twilight": ((0.06, 0.08, 0.16), (0.00, 0.00, 0.00)),
@@ -174,158 +173,157 @@ def export_palette_csv(palette_dict: dict) -> BytesIO:
     buf = BytesIO(); dfp.to_csv(buf, index=False); buf.seek(0); return buf
 
 # =========================
-# Background helper
+# Background helper (robust)
 # =========================
-
 def vertical_gradient(width, height, top_rgb, bottom_rgb, brightness=1.0):
-    # Ensure top and bottom are floats 0..1
     t = np.array(top_rgb, dtype=float) * brightness
     b = np.array(bottom_rgb, dtype=float) * brightness
-
-    # Linear gradient from top → bottom
     grad = np.linspace(0, 1, height).reshape(height, 1, 1)
-
-    # Broadcast to (height, 1, 3)
     img = t.reshape(1,1,3)*(1-grad) + b.reshape(1,1,3)*grad
-
-    # Convert to uint8
     img = (img * 255).astype(np.uint8)
-
-    # Expand horizontally to (height, width, 3)
     img = np.tile(img, (1, width, 1))
-
-    # ✅ Ensure C-contiguous (PIL requirement)
     img = np.ascontiguousarray(img)
-
     return Image.fromarray(img, mode="RGB")
 
 # =========================
-# Aurora generator
+# Perlin-like fBm Noise (no extra deps)
 # =========================
-def make_wave_y(width, rng, style, amplitude_px, distortion, smoothness, base_y_px):
-    x = np.linspace(0, 1, width)
-    if style == "Smooth Sine":
-        freq = rng.uniform(1.0, 3.0)
-        phase = rng.uniform(0, 2*np.pi)
-        y = np.sin(2*np.pi*freq*x + phase)
-        noise = rng.normal(0, distortion, size=width)
-        # smooth noise
-        k = max(3, int(5 + smoothness*20))
-        kernel = np.ones(k)/k
-        noise = np.convolve(noise, kernel, mode="same")
-        y = y*0.7 + noise*0.3
-    elif style == "Cubic Spline":
-        # pseudo spline: random anchors + moving average smoothing
-        anchors = 8 + int(smoothness*10)
-        pts_x = np.linspace(0,1,anchors)
-        pts_y = rng.normal(0, 0.6, size=anchors)  # broader motion
-        y = np.interp(x, pts_x, pts_y)
-        k = max(5, int(15 + smoothness*40))
-        kernel = np.ones(k)/k
-        y = np.convolve(y, kernel, mode="same")
-        y = y / (np.max(np.abs(y))+1e-6)
-        y += rng.normal(0, distortion*0.5, size=width)
-    else:  # "Flat Layers"
-        y = rng.normal(0, distortion*0.3, size=width)
-        k = max(7, int(25 + smoothness*60))
-        kernel = np.ones(k)/k
-        y = np.convolve(y, kernel, mode="same")
-        y = y / (np.max(np.abs(y))+1e-6) * 0.5  # flatter
+def fbm_noise(h, w, rng, octaves=4, base_scale=128, persistence=0.5, lacunarity=2.0):
+    acc = np.zeros((h, w), dtype=np.float32)
+    amp = 1.0
+    scale = base_scale
+    for _ in range(octaves):
+        gh = max(1, h // max(1, scale))
+        gw = max(1, w // max(1, scale))
+        g = rng.random((gh, gw)).astype(np.float32)
+        layer = np.array(
+            Image.fromarray((g*255).astype(np.uint8), mode="L").resize((w, h), Image.BICUBIC),
+            dtype=np.float32
+        ) / 255.0
+        acc += layer * amp
+        amp *= persistence
+        scale = max(1, int(scale / lacunarity))
+    acc = acc - acc.min()
+    if acc.max() > 1e-6:
+        acc = acc / acc.max()
+    return acc  # 0..1
 
-    y_px = base_y_px + amplitude_px * y
-    return np.clip(y_px, 0, None)
-
-def draw_band_to_mask(mask_img: Image.Image, y_top: np.ndarray, thickness_px: int):
-    """Fill polygon between y_top and y_top+thickness."""
-    w, h = mask_img.size
-    y_bottom = np.clip(y_top + thickness_px, 0, h-1)
-    xs = np.arange(w)
-    poly = [(int(xs[i]), int(y_top[i])) for i in range(w)] + \
-           [(int(xs[i]), int(y_bottom[w-1-i])) for i in range(w)]
-    draw = ImageDraw.Draw(mask_img)
-    draw.polygon(poly, fill=255)
-
+# =========================
+# Aurora renderer (REAL AURORA)
+# =========================
 def apply_band(base_rgb: np.ndarray, band_color: tuple, band_alpha: np.ndarray, mode: str):
-    """
-    base_rgb: (H,W,3) float 0..1
-    band_color: (3,) float 0..1
-    band_alpha: (H,W) float 0..1
-    mode: 'Normal' | 'Additive' | 'Linear Dodge'
-    """
     c = np.array(band_color).reshape(1,1,3)
     a = band_alpha[...,None]
     if mode == "Normal":
         base_rgb = base_rgb*(1-a) + c*a
     elif mode == "Additive":
-        # Screen-like soft additive
         base_rgb = 1 - (1 - base_rgb) * (1 - c * a)
-    else:  # Linear Dodge (add then clip)
+    else:  # Linear Dodge
         base_rgb = np.clip(base_rgb + c * a, 0.0, 1.0)
     return base_rgb
 
-def render_aurora(
+def render_aurora_real(
     df: pd.DataFrame, active_palette: dict, theme_name: str,
     width: int, height: int, seed: int,
-    wave_style: str, blend_mode: str,
-    amplitude_scale: float, distortion: float, smoothness: float,
+    direction: str, blend_mode: str,
+    base_width_ratio: float, noise_strength: float,
     opacity: float, blur_px: float,
-    layers_per_emotion_max: int, band_thickness_ratio: float,
-    bg_brightness: float, altitude_range: tuple[float, float]
+    bands_per_emotion: int, bg_brightness: float
 ):
     rng = np.random.default_rng(seed)
 
     # Background
     top, bottom = THEMES[theme_name]
     bg = vertical_gradient(width, height, top, bottom, brightness=bg_brightness)
-    base = np.array(bg).astype(np.float32) / 255.0  # (H,W,3)
+    base = np.array(bg).astype(np.float32) / 255.0
 
-    # Emotion frequencies -> number of bands per emotion
+    # Global noise fields
+    noise_main = fbm_noise(height, width, rng, octaves=5, base_scale=96, persistence=0.55, lacunarity=2.0)
+    noise_line = fbm_noise(height, 1, rng, octaves=4, base_scale=64, persistence=0.6, lacunarity=2.0).reshape(height)  # for center meander
+
+    # Emotion frequencies
     freq = df["emotion"].value_counts().to_dict()
     if not freq:
         return Image.fromarray((base*255).astype(np.uint8))
 
     max_f = max(freq.values())
-    # Loop emotions by descending freq to prioritize strong bands on top
+
+    # Grid for vectorization
+    X = np.arange(width)[None, :].astype(np.float32)  # (1,W)
+    Y = np.arange(height)[:, None].astype(np.float32) # (H,1)
+
+    # Direction params
+    if direction == "Vertical Curtains":
+        slope = 0.0
+    elif direction == "Tilted Curtains":
+        slope = rng.uniform(-0.25, 0.25)  # tilt amount
+    else:  # "Horizontal Bands"
+        slope = None  # special handling
+
     for emo, f in sorted(freq.items(), key=lambda kv: -kv[1]):
         color_rgb = np.array(active_palette.get(emo, active_palette.get("mixed", (210,190,140))))/255.0
-        norm = f / max_f if max_f > 0 else 0
-        bands = max(1, int(round(norm * layers_per_emotion_max)))
+
+        # number of bands per emotion (fixed=3 as requested)
+        bands = int(bands_per_emotion)
+
         for _ in range(bands):
-            # Altitude (relative height position)
-            alt_min, alt_max = altitude_range
-            base_y_px = int(height * rng.uniform(alt_min, alt_max))
-            amplitude_px = int(height * (0.05 + 0.20 * amplitude_scale) * (0.7 + 0.6*rng.random()))
-            thickness_px = max(3, int(amplitude_px * band_thickness_ratio))
-            # Wave curve
-            y_top = make_wave_y(width, rng, wave_style, amplitude_px, distortion, smoothness, base_y_px)
-            # Band mask
-            mask = Image.new("L", (width, height), 0)
-            draw_band_to_mask(mask, y_top, thickness_px)
+            # Width (sigma) as ratio of image width
+            sigma = (base_width_ratio * width) * (0.6 + 0.6*rng.random())
+            sigma = max(12.0, float(sigma))
+
+            # Center curve
+            cx0 = rng.uniform(0.2, 0.8) * width
+            meander = (noise_line - 0.5) * (noise_strength * width * 0.15)
+            center_x = cx0 + meander  # (H,)
+
+            if slope is not None:
+                # Add tilt: linear with Y
+                center_x = center_x + slope * (Y.squeeze() - height/2.0)
+
+            # Build alpha mask by Gaussian from center_x
+            dx = X - center_x[:, None]  # (H,W)
+            band = np.exp(-(dx*dx) / (2.0 * (sigma**2)))
+
+            # Vertical brightness profile: brighter at top, fade to bottom
+            vertical_profile = np.linspace(1.0, 0.35, height, dtype=np.float32).reshape(height,1)
+            band *= vertical_profile
+
+            # Modulate with noise texture to create aurora ripples
+            ripple = 0.6 + 0.4 * (noise_main**1.2)
+            band = band * ripple
+
+            # Normalize and apply opacity
+            band = band / (band.max() + 1e-6)
+            band = band * opacity
+
+            # Optional blur (as image)
+            band_img = (np.clip(band, 0.0, 1.0) * 255).astype(np.uint8)
+            band_pil = Image.fromarray(band_img, mode="L")
             if blur_px > 0:
-                mask = mask.filter(ImageFilter.GaussianBlur(radius=blur_px))
-            band_alpha = (np.array(mask).astype(np.float32)/255.0) * opacity
-            # Blend
+                band_pil = band_pil.filter(ImageFilter.GaussianBlur(radius=blur_px))
+            band_alpha = np.array(band_pil).astype(np.float32) / 255.0
+
             base = apply_band(base, tuple(color_rgb.tolist()), band_alpha, blend_mode)
 
     out = (np.clip(base, 0, 1) * 255).astype(np.uint8)
     return Image.fromarray(out)
 
 # =========================
-# Sidebar — Logical sections
+# UI
 # =========================
 with st.expander("Instructions", expanded=False):
     st.markdown("""
 **How to use**
-1) **Data Source**: fetch texts via NewsAPI.  
-2) **Emotion Mapping**: filter emotions and compound range.  
-3) **Aurora Settings**: style, blend, amplitude, distortion, opacity, blur, layers, altitude.  
-4) **Custom Palette (RGB)**: add emotions, import/export CSV.  
-5) **Output**: download or reset.  
+1) Data Source (NewsAPI)  
+2) Emotion Mapping  
+3) Aurora Settings (REAL Aurora)  
+4) Custom Palette (RGB / CSV)  
+5) Output  
 """)
 
 # ---- 1) Data Source (NEWS ONLY)
 st.sidebar.header("1) Data Source (NewsAPI only)")
-kw = st.sidebar.text_input("Keyword (e.g., economy / technology / climate):", "technology")
+kw = st.sidebar.text_input("Keyword:", "technology")
 news_btn = st.sidebar.button("Fetch from NewsAPI", use_container_width=True)
 
 df = pd.DataFrame()
@@ -336,7 +334,7 @@ if news_btn:
     else:
         df = fetch_news(key, keyword=kw)
 
-# Fallback sample so app can render before first fetch
+# Fallback sample
 if df.empty:
     df = pd.DataFrame({"text":[
         "I can't believe how beautiful the sky is tonight!",
@@ -347,9 +345,8 @@ if df.empty:
     ]})
     df["timestamp"] = str(date.today())
 
-# Ensure dataset has 'text'
 if "text" not in df.columns:
-    st.error("The dataset must include a 'text' column."); st.stop()
+    st.error("Dataset must include 'text' column."); st.stop()
 
 # Sentiment + emotion
 with st.spinner("Analyzing sentiment and mapping emotions..."):
@@ -362,13 +359,12 @@ st.sidebar.header("2) Emotion Mapping")
 cmp_min, cmp_max = st.sidebar.slider("Compound range:", -1.0, 1.0, (-1.0, 1.0), 0.01)
 available_emotions = sorted(df["emotion"].unique().tolist())
 
-# Palette/init
 init_palette_state()
 ACTIVE_PALETTE = get_active_palette()
 
 def emotion_label_with_name(e: str, pal: dict) -> str:
     if e in COLOR_NAMES: return f"{e} ({COLOR_NAMES[e]})"
-    rgb = pal.get(e, (0,0,0)); return f"{e} (Custom {rgb[0]},{rgb[1]},{rgb[2]})"
+    r,g,b = pal.get(e, (0,0,0)); return f"{e} (Custom {r},{g},{b})"
 
 final_labels_options = [emotion_label_with_name(e, ACTIVE_PALETTE) for e in ALL_EMOTIONS]
 final_labels_default = [emotion_label_with_name(e, ACTIVE_PALETTE) for e in available_emotions]
@@ -377,60 +373,53 @@ selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 
 df = df[(df["emotion"].isin(selected_emotions)) & (df["compound"] >= cmp_min) & (df["compound"] <= cmp_max)].reset_index(drop=True)
 
-# ---- 3) Aurora Settings (wave style & blend mode & controls)
-st.sidebar.header("3) Aurora Settings")
-wave_style = st.sidebar.selectbox("Wave Style:", ["Smooth Sine", "Cubic Spline", "Flat Layers"], index=1)  # default: Cubic Spline
-blend_mode = st.sidebar.selectbox("Blend Mode:", ["Additive", "Linear Dodge", "Normal"], index=0)
+# ---- 3) Aurora Settings (REAL)
+st.sidebar.header("3) Aurora Settings (REAL)")
+direction = st.sidebar.selectbox("Direction:", ["Vertical Curtains","Tilted Curtains","Horizontal Bands"], index=0)
+blend_mode = st.sidebar.selectbox("Blend Mode:", ["Additive","Linear Dodge","Normal"], index=0)
 
-amplitude_scale = st.sidebar.slider("Amplitude Scale:", 0.1, 2.0, 1.0, 0.05)
-distortion = st.sidebar.slider("Distortion Strength:", 0.0, 1.5, 0.35, 0.05)
-smoothness = st.sidebar.slider("Smoothness:", 0.0, 1.0, 0.6, 0.05)
-opacity = st.sidebar.slider("Band Opacity:", 0.15, 1.0, 0.45, 0.05)
-blur_px = st.sidebar.slider("Band Blur (px):", 0.0, 8.0, 2.0, 0.5)
+base_width_ratio = st.sidebar.slider("Base Width (ratio of width):", 0.02, 0.20, 0.06, 0.01)
+noise_strength = st.sidebar.slider("Meander / Noise Strength:", 0.0, 1.0, 0.45, 0.05)
+opacity = st.sidebar.slider("Band Opacity:", 0.15, 0.95, 0.50, 0.05)
+blur_px = st.sidebar.slider("Vertical Blur (px):", 0.0, 12.0, 4.5, 0.5)
 
-layers_per_emotion_max = st.sidebar.slider("Max Layers per Emotion:", 1, 8, 4, 1)
-band_thickness_ratio = st.sidebar.slider("Band Thickness (vs amplitude):", 0.1, 1.0, 0.45, 0.05)
+# your choice: per emotion 3 bands (fixed)
+bands_per_emotion = 3
 
 theme_name = st.sidebar.selectbox("Background Theme:", list(THEMES.keys()), index=0)
-bg_brightness = st.sidebar.slider("Background Brightness:", 0.3, 1.5, 1.0, 0.05)
-altitude_range = st.sidebar.slider("Aurora Altitude Range (relative):", 0.0, 1.0, (0.25, 0.85), 0.01)
+bg_brightness = st.sidebar.slider("Background Brightness:", 0.4, 1.6, 1.0, 0.05)
 
-# ---- 4) Custom Palette (RGB)
+# ---- 4) Custom Palette
 st.sidebar.header("4) Custom Palette (RGB)")
 use_csv = st.sidebar.checkbox("Use CSV palette (RGB editor)", value=st.session_state["use_csv_palette"])
 st.session_state["use_csv_palette"] = use_csv
 
 with st.sidebar.expander("Add Custom Emotion (RGB 0–255)", expanded=False):
-    c1, c2, c3, c4 = st.columns([1.8, 1, 1, 1])
+    c1,c2,c3,c4 = st.columns([1.8,1,1,1])
     emo_name = c1.text_input("Emotion name")
     r = c2.number_input("R (0–255)", 0, 255, 210, 1)
     g = c3.number_input("G (0–255)", 0, 255, 190, 1)
     b = c4.number_input("B (0–255)", 0, 255, 140, 1)
     if st.button("Add Emotion", use_container_width=True):
-        add_custom_emotion(emo_name, r, g, b)
-        st.success(f"Added: {emo_name} = ({r},{g},{b})")
+        add_custom_emotion(emo_name, r, g, b); st.success(f"Added: {emo_name} = ({r},{g},{b})")
     custom_now = st.session_state.get("custom_palette", {})
     if custom_now:
-        df_custom = pd.DataFrame([{"emotion": k, "r": v[0], "g": v[1], "b": v[2]} for k, v in sorted(custom_now.items())])
-        st.dataframe(df_custom, use_container_width=True, height=200)
+        st.dataframe(pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in sorted(custom_now.items())]),
+                     use_container_width=True, height=180)
     else:
         st.caption("No custom colors yet.")
 
 with st.sidebar.expander("Edit Palette / Import & Export CSV", expanded=False):
     upcsv = st.file_uploader("Import palette CSV (emotion,r,g,b)", type=["csv"])
-    if upcsv is not None:
-        import_palette_csv(upcsv)
-    current_pal = dict(DEFAULT_RGB)
-    current_pal.update(st.session_state.get("custom_palette", {}))
+    if upcsv is not None: import_palette_csv(upcsv)
+    current_pal = dict(DEFAULT_RGB); current_pal.update(st.session_state.get("custom_palette", {}))
     if st.session_state.get("use_csv_palette"):
         current_pal = dict(st.session_state.get("custom_palette", {}))
     if current_pal:
         pal_df = pd.DataFrame([{"emotion":k, "r":v[0], "g":v[1], "b":v[2]} for k,v in sorted(current_pal.items())])
-        st.dataframe(pal_df, use_container_width=True, height=220)
+        st.dataframe(pal_df, use_container_width=True, height=210)
         dl = export_palette_csv(current_pal)
         st.download_button("Download CSV", data=dl, file_name="palette.csv", mime="text/csv", use_container_width=True)
-    else:
-        st.info("No colors yet. Add emotions above or import a CSV.")
 
 # ---- 5) Output
 st.sidebar.header("5) Output")
@@ -442,31 +431,28 @@ if st.sidebar.button("Reset all settings"):
 # =========================
 left, right = st.columns([0.58, 0.42])
 with left:
-    st.subheader("🌌 Aurora")
+    st.subheader("🌌 Real Aurora")
     if df.empty:
         st.warning("No data points under current filters.")
     else:
-        img = render_aurora(
+        img = render_aurora_real(
             df=df, active_palette=ACTIVE_PALETTE, theme_name=theme_name,
             width=1600, height=900, seed=42,
-            wave_style=wave_style, blend_mode=blend_mode,
-            amplitude_scale=amplitude_scale, distortion=distortion, smoothness=smoothness,
+            direction=direction, blend_mode=blend_mode,
+            base_width_ratio=base_width_ratio, noise_strength=noise_strength,
             opacity=opacity, blur_px=blur_px,
-            layers_per_emotion_max=layers_per_emotion_max, band_thickness_ratio=band_thickness_ratio,
-            bg_brightness=bg_brightness, altitude_range=altitude_range
+            bands_per_emotion=bands_per_emotion, bg_brightness=bg_brightness
         )
         buf = BytesIO(); img.save(buf, format="PNG"); buf.seek(0)
-        st.image(buf, caption=f"Emotion Aurora — {theme_name} — {wave_style} / {blend_mode}", use_column_width=True)
-        st.download_button("💾 Download PNG", data=buf, file_name="emotion_aurora.png", mime="image/png")
+        st.image(buf, caption=f"Real Aurora — {direction} — {blend_mode}", use_column_width=True)
+        st.download_button("💾 Download PNG", data=buf, file_name="emotion_aurora_real.png", mime="image/png")
 
 with right:
     st.subheader("📊 Data & Emotions")
     df_show = df.copy()
-
     def label_for_table(e):
         if e in COLOR_NAMES: return f"{e} ({COLOR_NAMES[e]})"
-        rgb = ACTIVE_PALETTE.get(e, (0,0,0)); return f"{e} (Custom {rgb[0]},{rgb[1]},{rgb[2]})"
-
+        r,g,b = ACTIVE_PALETTE.get(e, (0,0,0)); return f"{e} (Custom {r},{g},{b})"
     df_show["emotion_label"] = df_show["emotion"].apply(label_for_table)
     cols = ["text", "emotion_label", "compound", "pos", "neu", "neg"]
     if "timestamp" in df.columns: cols.insert(1, "timestamp")
