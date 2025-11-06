@@ -176,20 +176,26 @@ def export_palette_csv(palette_dict: dict) -> BytesIO:
 # =========================
 # Background helper
 # =========================
+
 def vertical_gradient(width, height, top_rgb, bottom_rgb, brightness=1.0):
-    # top_rgb and bottom_rgb are floats 0..1
-    t = np.array(top_rgb) * brightness
-    b = np.array(bottom_rgb) * brightness
+    # Ensure top and bottom are floats 0..1
+    t = np.array(top_rgb, dtype=float) * brightness
+    b = np.array(bottom_rgb, dtype=float) * brightness
 
-    # gradient from top to bottom
-    grad = np.linspace(0, 1, height).reshape(-1, 1)
+    # Linear gradient from top → bottom
+    grad = np.linspace(0, 1, height).reshape(height, 1, 1)
 
-    # (height, 1, 3)
-    img = (t*(1-grad) + b*grad).clip(0,1)
+    # Broadcast to (height, 1, 3)
+    img = t.reshape(1,1,3)*(1-grad) + b.reshape(1,1,3)*grad
+
+    # Convert to uint8
     img = (img * 255).astype(np.uint8)
 
-    # ✅ Expand horizontally to width (correct dimensions)
-    img = np.repeat(img, width, axis=1)   # (height, width, 3)
+    # Expand horizontally to (height, width, 3)
+    img = np.tile(img, (1, width, 1))
+
+    # ✅ Ensure C-contiguous (PIL requirement)
+    img = np.ascontiguousarray(img)
 
     return Image.fromarray(img, mode="RGB")
 
