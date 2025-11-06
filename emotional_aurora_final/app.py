@@ -80,7 +80,6 @@ DEFAULT_RGB = {
     "mixed":      (210, 190, 140),
 }
 ALL_EMOTIONS = list(DEFAULT_RGB.keys())
-
 COLOR_NAMES = {
     "joy": "Warm Jupiter Gold","love": "Venus Rose","pride": "Saturn Violet","hope": "Uranus Mint",
     "curiosity": "Soft Turquoise","calm": "Neptune Blue","surprise": "Dawn Peach","neutral": "Lunar Gray",
@@ -188,7 +187,7 @@ def vertical_gradient(width, height, top_rgb, bottom_rgb, brightness=1.0):
 # =========================
 # Perlin-like fBm Noise (no extra deps)
 # =========================
-def fbm_noise(h, w, rng, octaves=4, base_scale=128, persistence=0.5, lacunarity=2.0):
+def fbm_noise(h, w, rng, octaves=5, base_scale=96, persistence=0.55, lacunarity=2.0):
     acc = np.zeros((h, w), dtype=np.float32)
     amp = 1.0
     scale = base_scale
@@ -209,7 +208,7 @@ def fbm_noise(h, w, rng, octaves=4, base_scale=128, persistence=0.5, lacunarity=
     return acc  # 0..1
 
 # =========================
-# Aurora renderer (REAL AURORA)
+# Blend helper
 # =========================
 def apply_band(base_rgb: np.ndarray, band_color: tuple, band_alpha: np.ndarray, mode: str):
     c = np.array(band_color).reshape(1,1,3)
@@ -222,88 +221,135 @@ def apply_band(base_rgb: np.ndarray, band_color: tuple, band_alpha: np.ndarray, 
         base_rgb = np.clip(base_rgb + c * a, 0.0, 1.0)
     return base_rgb
 
-def render_aurora_real(
-    df: pd.DataFrame, active_palette: dict, theme_name: str,
+# =========================
+# Aurora — Arcs (帘幕)
+# =========================
+def render_arcs_layer(width, height, rng, color_rgb, strength=0.9, streak=0.7, blur_px=5.0):
+    X = np.arange(width)[None, :].astype(np.float32)
+    Y = np.arange(height)[:, None].astype(np.float32)
+    base = np.zeros((height, width), dtype=np.float32)
+
+    # 基础水平弧带（下部更亮）
+    y0 = rng.uniform(0.55, 0.75) * height
+    sigma_y = rng.uniform(0.10, 0.20) * height
+    band = np.exp(-((Y - y0)**2) / (2.0 * sigma_y**2))
+    base += band
+
+    # 竖直光丝：列噪声 + 强度衰减
+    col_noise = fbm_noise(1, width, rng, octaves=4, base_scale=48).reshape(1, width)
+    streaks = np.repeat(col_noise, height, axis=0)
+    streaks = (streaks - streaks.min()) / (streaks.max() - streaks.min() + 1e-6)
+    streaks = streaks**2.0  # 更尖锐
+    base *= (0.6 + 0.4 * streaks * streak)
+
+    # 垂直亮度：自下而上逐渐衰减 + 上部轻微紫光过渡（不着色，仅亮度控制）
+    vertical_profile = np.linspace(1.0, 0.25, height, dtype=np.float32).reshape(height,1)
+    base *= vertical_profile
+
+    # 平滑 + 模糊
+    base = base / (base.max() + 1e-6)
+    band_img = (np.clip(base * strength, 0.0, 1.0) * 255).astype(np.uint8)
+    pil = Image.fromarray(band_img, mode="L")
+    if blur_px > 0:
+        pil = pil.filter(ImageFilter.GaussianBlur(radius=blur_px))
+    alpha = np.array(pil).astype(np.float32) / 255.0
+
+    rgb = np.zeros((height,width,3), dtype=np.float32)
+    rgb[:,:,0] = color_rgb[0]; rgb[:,:,1] = color_rgb[1]; rgb[:,:,2] = color_rgb[2]
+    return rgb, alpha
+
+# =========================
+# Aurora — Corona (旋涡)
+# =========================
+def render_corona_layer(width, height, rng, color_rgb, swirl=0.9, detail=0.6, blur_px=6.0):
+    X = np.linspace(-1, 1, width)[None, :]
+    Y = np.linspace(-1, 1, height)[:, None]
+    cx, cy = rng.uniform(-0.2, 0.2), rng.uniform(-0.2, 0.1)  # 近天顶
+    dx = X - cx; dy = Y - cy
+    r = np.sqrt(dx*dx + dy*dy) + 1e-6
+    theta = np.arctan2(dy, dx)
+
+    # 旋涡 + 半径衰减
+    theta = theta + swirl * r * 2.0
+    # 将角度扰动映射回位置，得到条纹
+    stripe = np.cos(theta*3.0) * np.exp(-r*1.8)
+    # 噪声细节
+    noise = fbm_noise(height, width, rng, octaves=5, base_scale=int(80 + 60*detail), persistence=0.6)
+    base = (0.55 + 0.45*noise) * np.clip(stripe, 0, 1)
+
+    # 平滑 + 模糊
+    base = base / (base.max() + 1e-6)
+    band_img = (np.clip(base, 0.0, 1.0) * 255).astype(np.uint8)
+    pil = Image.fromarray(band_img, mode="L").filter(ImageFilter.GaussianBlur(radius=blur_px))
+    alpha = np.array(pil).astype(np.float32) / 255.0
+
+    rgb = np.zeros((height,width,3), dtype=np.float32)
+    rgb[:,:,0] = color_rgb[0]; rgb[:,:,1] = color_rgb[1]; rgb[:,:,2] = color_rgb[2]
+    return rgb, alpha
+
+# =========================
+# Aurora Engine
+# =========================
+def render_engine(
+    df: pd.DataFrame, palette: dict, theme_name: str,
     width: int, height: int, seed: int,
-    direction: str, blend_mode: str,
-    base_width_ratio: float, noise_strength: float,
-    opacity: float, blur_px: float,
-    bands_per_emotion: int, bg_brightness: float
+    aurora_type: str, preset: str,
+    blend_mode: str, bands_per_emotion: int,
+    arcs_strength: float, arcs_streak: float, arcs_blur: float,
+    corona_swirl: float, corona_detail: float, corona_blur: float,
+    global_brightness: float
 ):
     rng = np.random.default_rng(seed)
-
-    # Background
     top, bottom = THEMES[theme_name]
-    bg = vertical_gradient(width, height, top, bottom, brightness=bg_brightness)
+    bg = vertical_gradient(width, height, top, bottom, brightness=global_brightness)
     base = np.array(bg).astype(np.float32) / 255.0
 
-    # Global noise fields
-    noise_main = fbm_noise(height, width, rng, octaves=5, base_scale=96, persistence=0.55, lacunarity=2.0)
-    noise_line = fbm_noise(height, 1, rng, octaves=4, base_scale=64, persistence=0.6, lacunarity=2.0).reshape(height)  # for center meander
+    # 预设：控制整体观感
+    if preset == "Realistic":
+        blend_mode = "Additive"
+        arcs_strength = min(arcs_strength, 0.9)
+        arcs_streak = min(arcs_streak, 0.8)
+        corona_detail = 0.5
+    elif preset == "Artistic":
+        blend_mode = "Linear Dodge"
+        arcs_strength = max(arcs_strength, 0.95)
+        corona_detail = 0.8
+    else:  # Cinematic
+        blend_mode = blend_mode  # 尊重用户选择
+        arcs_strength = max(arcs_strength, 0.95)
+        corona_detail = max(corona_detail, 0.7)
 
-    # Emotion frequencies
-    freq = df["emotion"].value_counts().to_dict()
-    if not freq:
-        return Image.fromarray((base*255).astype(np.uint8))
+    # 情绪频率（决定出现优先级）
+    emotions = df["emotion"].value_counts().index.tolist()
+    if not emotions:
+        emotions = ["hope","calm","awe"]  # 保底美观
 
-    max_f = max(freq.values())
+    types = ["Arcs","Corona","Mix"]
+    if aurora_type == "Random":
+        choose = rng.choice(types)
+    else:
+        choose = aurora_type
 
-    # Grid for vectorization
-    X = np.arange(width)[None, :].astype(np.float32)  # (1,W)
-    Y = np.arange(height)[:, None].astype(np.float32) # (H,1)
-
-    # Direction params
-    if direction == "Vertical Curtains":
-        slope = 0.0
-    elif direction == "Tilted Curtains":
-        slope = rng.uniform(-0.25, 0.25)  # tilt amount
-    else:  # "Horizontal Bands"
-        slope = None  # special handling
-
-    for emo, f in sorted(freq.items(), key=lambda kv: -kv[1]):
-        color_rgb = np.array(active_palette.get(emo, active_palette.get("mixed", (210,190,140))))/255.0
-
-        # number of bands per emotion (fixed=3 as requested)
-        bands = int(bands_per_emotion)
-
-        for _ in range(bands):
-            # Width (sigma) as ratio of image width
-            sigma = (base_width_ratio * width) * (0.6 + 0.6*rng.random())
-            sigma = max(12.0, float(sigma))
-
-            # Center curve
-            cx0 = rng.uniform(0.2, 0.8) * width
-            meander = (noise_line - 0.5) * (noise_strength * width * 0.15)
-            center_x = cx0 + meander  # (H,)
-
-            if slope is not None:
-                # Add tilt: linear with Y
-                center_x = center_x + slope * (Y.squeeze() - height/2.0)
-
-            # Build alpha mask by Gaussian from center_x
-            dx = X - center_x[:, None]  # (H,W)
-            band = np.exp(-(dx*dx) / (2.0 * (sigma**2)))
-
-            # Vertical brightness profile: brighter at top, fade to bottom
-            vertical_profile = np.linspace(1.0, 0.35, height, dtype=np.float32).reshape(height,1)
-            band *= vertical_profile
-
-            # Modulate with noise texture to create aurora ripples
-            ripple = 0.6 + 0.4 * (noise_main**1.2)
-            band = band * ripple
-
-            # Normalize and apply opacity
-            band = band / (band.max() + 1e-6)
-            band = band * opacity
-
-            # Optional blur (as image)
-            band_img = (np.clip(band, 0.0, 1.0) * 255).astype(np.uint8)
-            band_pil = Image.fromarray(band_img, mode="L")
-            if blur_px > 0:
-                band_pil = band_pil.filter(ImageFilter.GaussianBlur(radius=blur_px))
-            band_alpha = np.array(band_pil).astype(np.float32) / 255.0
-
-            base = apply_band(base, tuple(color_rgb.tolist()), band_alpha, blend_mode)
+    for emo in emotions:
+        color = np.array(palette.get(emo, palette.get("mixed",(210,190,140))))/255.0
+        n = max(1, int(bands_per_emotion))
+        for _ in range(n):
+            if choose == "Arcs":
+                rgb, alpha = render_arcs_layer(width,height,rng,color,
+                                               strength=arcs_strength, streak=arcs_streak, blur_px=arcs_blur)
+                base = apply_band(base, tuple(color.tolist()), alpha, blend_mode)
+            elif choose == "Corona":
+                rgb, alpha = render_corona_layer(width,height,rng,color,
+                                                 swirl=corona_swirl, detail=corona_detail, blur_px=corona_blur)
+                base = apply_band(base, tuple(color.tolist()), alpha, blend_mode)
+            else:  # Mix
+                if rng.random() < 0.6:
+                    rgb, alpha = render_arcs_layer(width,height,rng,color,
+                                                   strength=arcs_strength, streak=arcs_streak, blur_px=arcs_blur)
+                else:
+                    rgb, alpha = render_corona_layer(width,height,rng,color,
+                                                     swirl=corona_swirl, detail=corona_detail, blur_px=corona_blur)
+                base = apply_band(base, tuple(color.tolist()), alpha, blend_mode)
 
     out = (np.clip(base, 0, 1) * 255).astype(np.uint8)
     return Image.fromarray(out)
@@ -316,7 +362,7 @@ with st.expander("Instructions", expanded=False):
 **How to use**
 1) Data Source (NewsAPI)  
 2) Emotion Mapping  
-3) Aurora Settings (REAL Aurora)  
+3) Aurora Engine (Type / Preset / Blend)  
 4) Custom Palette (RGB / CSV)  
 5) Output  
 """)
@@ -337,11 +383,11 @@ if news_btn:
 # Fallback sample
 if df.empty:
     df = pd.DataFrame({"text":[
-        "I can't believe how beautiful the sky is tonight!",
-        "The new update is fantastic and smooth.",
-        "Why is it raining again? Feeling a bit low.",
-        "Our team finally shipped the feature! Proud and grateful.",
+        "The northern sky erupted with a breathtaking aurora tonight.",
+        "New policies spark hope and gratitude among citizens.",
         "Markets look volatile; investors are anxious.",
+        "Calm seas and clear weather bring peace to travelers.",
+        "Innovation in science fills people with awe and curiosity."
     ]})
     df["timestamp"] = str(date.today())
 
@@ -370,24 +416,30 @@ final_labels_options = [emotion_label_with_name(e, ACTIVE_PALETTE) for e in ALL_
 final_labels_default = [emotion_label_with_name(e, ACTIVE_PALETTE) for e in available_emotions]
 selected_labels = st.sidebar.multiselect("Show emotions:", options=final_labels_options, default=final_labels_default)
 selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
-
 df = df[(df["emotion"].isin(selected_emotions)) & (df["compound"] >= cmp_min) & (df["compound"] <= cmp_max)].reset_index(drop=True)
 
-# ---- 3) Aurora Settings (REAL)
-st.sidebar.header("3) Aurora Settings (REAL)")
-direction = st.sidebar.selectbox("Direction:", ["Vertical Curtains","Tilted Curtains","Horizontal Bands"], index=0)
+# ---- 3) Aurora Engine (Cinematic preset)
+st.sidebar.header("3) Aurora Engine")
+aurora_type = st.sidebar.selectbox("Aurora Type:", ["Random","Arcs","Corona","Mix"], index=0)
+preset = st.sidebar.selectbox("Visual Preset:", ["Realistic","Artistic","Cinematic"], index=2)  # default Cinematic
 blend_mode = st.sidebar.selectbox("Blend Mode:", ["Additive","Linear Dodge","Normal"], index=0)
 
-base_width_ratio = st.sidebar.slider("Base Width (ratio of width):", 0.02, 0.20, 0.06, 0.01)
-noise_strength = st.sidebar.slider("Meander / Noise Strength:", 0.0, 1.0, 0.45, 0.05)
-opacity = st.sidebar.slider("Band Opacity:", 0.15, 0.95, 0.50, 0.05)
-blur_px = st.sidebar.slider("Vertical Blur (px):", 0.0, 12.0, 4.5, 0.5)
+bands_per_emotion = st.sidebar.slider("Bands per Emotion:", 1, 5, 3, 1)
 
-# your choice: per emotion 3 bands (fixed)
-bands_per_emotion = 3
+st.markdown("")  # spacing
+
+with st.sidebar.expander("Arcs Settings", expanded=True if aurora_type in ["Random","Arcs","Mix"] else False):
+    arcs_strength = st.slider("Brightness (Arcs):", 0.6, 1.2, 1.0, 0.05)
+    arcs_streak = st.slider("Streak Strength:", 0.0, 1.2, 0.9, 0.05)
+    arcs_blur = st.slider("Blur (px):", 0.0, 12.0, 5.0, 0.5)
+
+with st.sidebar.expander("Corona Settings", expanded=True if aurora_type in ["Random","Corona","Mix"] else False):
+    corona_swirl = st.slider("Swirl Strength:", 0.0, 1.5, 0.9, 0.05)
+    corona_detail = st.slider("Detail Level:", 0.2, 1.2, 0.8, 0.05)
+    corona_blur = st.slider("Blur (px):", 0.0, 14.0, 6.0, 0.5)
 
 theme_name = st.sidebar.selectbox("Background Theme:", list(THEMES.keys()), index=0)
-bg_brightness = st.sidebar.slider("Background Brightness:", 0.4, 1.6, 1.0, 0.05)
+global_brightness = st.sidebar.slider("Background Brightness:", 0.4, 1.6, 1.0, 0.05)
 
 # ---- 4) Custom Palette
 st.sidebar.header("4) Custom Palette (RGB)")
@@ -431,21 +483,22 @@ if st.sidebar.button("Reset all settings"):
 # =========================
 left, right = st.columns([0.58, 0.42])
 with left:
-    st.subheader("🌌 Real Aurora")
+    st.subheader("🎬 Cinematic Aurora (Randomized Corona / Arcs / Mix)")
     if df.empty:
         st.warning("No data points under current filters.")
     else:
-        img = render_aurora_real(
-            df=df, active_palette=ACTIVE_PALETTE, theme_name=theme_name,
-            width=1600, height=900, seed=42,
-            direction=direction, blend_mode=blend_mode,
-            base_width_ratio=base_width_ratio, noise_strength=noise_strength,
-            opacity=opacity, blur_px=blur_px,
-            bands_per_emotion=bands_per_emotion, bg_brightness=bg_brightness
+        img = render_engine(
+            df=df, palette=ACTIVE_PALETTE, theme_name=theme_name,
+            width=1600, height=900, seed=np.random.randint(0, 10_000),
+            aurora_type=aurora_type, preset=preset,
+            blend_mode=blend_mode, bands_per_emotion=bands_per_emotion,
+            arcs_strength=arcs_strength, arcs_streak=arcs_streak, arcs_blur=arcs_blur,
+            corona_swirl=corona_swirl, corona_detail=corona_detail, corona_blur=corona_blur,
+            global_brightness=global_brightness
         )
         buf = BytesIO(); img.save(buf, format="PNG"); buf.seek(0)
-        st.image(buf, caption=f"Real Aurora — {direction} — {blend_mode}", use_column_width=True)
-        st.download_button("💾 Download PNG", data=buf, file_name="emotion_aurora_real.png", mime="image/png")
+        st.image(buf, caption=f"{aurora_type} — {preset} — {blend_mode}", use_column_width=True)
+        st.download_button("💾 Download PNG", data=buf, file_name="emotion_aurora_cinematic.png", mime="image/png")
 
 with right:
     st.subheader("📊 Data & Emotions")
