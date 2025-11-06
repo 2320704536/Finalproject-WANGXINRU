@@ -177,12 +177,21 @@ def export_palette_csv(palette_dict: dict) -> BytesIO:
 # Background helper
 # =========================
 def vertical_gradient(width, height, top_rgb, bottom_rgb, brightness=1.0):
+    # top_rgb and bottom_rgb are floats 0..1
     t = np.array(top_rgb) * brightness
     b = np.array(bottom_rgb) * brightness
-    grad = np.linspace(0, 1, height).reshape(-1,1)
+
+    # gradient from top to bottom
+    grad = np.linspace(0, 1, height).reshape(-1, 1)
+
+    # (height, 1, 3)
     img = (t*(1-grad) + b*grad).clip(0,1)
-    img = (img*255).astype(np.uint8)
-    return Image.fromarray(np.repeat(img, width, axis=1).transpose(1,0,2))
+    img = (img * 255).astype(np.uint8)
+
+    # ✅ Expand horizontally to width (correct dimensions)
+    img = np.repeat(img, width, axis=1)   # (height, width, 3)
+
+    return Image.fromarray(img, mode="RGB")
 
 # =========================
 # Aurora generator
