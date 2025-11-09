@@ -18,8 +18,7 @@ st.title("🌌 Emotional Aurora — Wang Xinru — Final Project")
 with st.expander("Instructions", expanded=False):
     st.markdown("""
 ### How to Use This Project  
-
-**This project visualizes real-time emotions extracted from news articles as aurora patterns, then applies a cinematic color grading pipeline.**
+This project visualizes real-time emotions extracted from news articles as **Corona-style aurora** patterns, then applies a **cinematic color grading** pipeline with **Auto Brightness Compensation**.
 
 **1) Fetch Data**  
 - Use *NewsAPI* to fetch headlines  
@@ -31,21 +30,20 @@ with st.expander("Instructions", expanded=False):
 - You can filter emotions and compound score  
 
 **3) Aurora Rendering (Corona)**  
-- Corona-style aurora with spiral structure  
-- Each emotion produces one or more aurora bands  
+- Corona-style (swirling) aurora; each emotion yields one or more bands  
 - Base colors come from palette (planet-like or cinematic presets)  
 
-**4) Cinematic Color System**  
+**4) Cinematic Color System + Auto Brightness**  
 - Exposure, Contrast, Gamma, Saturation  
 - Highlight roll-off (filmic look)  
 - White balance (Temperature & Tint)  
 - Split toning for shadows/highlights  
-- Bloom (glow) and Vignette (dark corners)  
-- Always-colorful safeguard (auto saturation boost)
-- **Auto Brightness Compensation**: keep overall luminance in a target range
+- Bloom (glow) & Vignette (dark corners)  
+- **Auto Brightness Compensation**: adaptive gain + black point lift; keeps images bright but not washed out  
+- Always-colorful safeguard (auto saturation boost if needed)
 
 **5) Download**  
-- Export the image as PNG  
+- Export the final image as PNG
 ---
 """)
 
@@ -354,47 +352,17 @@ def ensure_colorfulness(img, min_sat=0.15, boost=1.25):
         return adjust_saturation(img, boost)
     return img
 
-def auto_brightness_comp(img, target_luma=0.22, min_gain=0.85, max_gain=1.6):
-    """
-    Keep overall brightness stable based on perceptual luma (Rec.709).
-    Works in linear-light domain for correct exposure scaling.
-    """
-    # img is in display (sRGB) domain here; convert to linear for exposure scaling
-    lin = srgb_to_linear(np.clip(img, 0, 1))
-    luma = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
-    current = float(np.mean(luma))
-    if current < 1e-6:
-        gain = 1.0
-    else:
-        gain = np.clip(target_luma / current, min_gain, max_gain)
-    lin *= gain
-    return np.clip(linear_to_srgb(lin), 0, 1)
-
 # =========================
 # 🎨 Cinematic Palettes
 # =========================
 CINEMATIC_PRESETS = {
-    "Planetary (Soft)": {
-        "mult": (1.00, 1.00, 1.00), "sat": 1.00, "temp": 0.00, "tint": 0.00
-    },
-    "Cinematic Cool": {
-        "mult": (0.95, 1.02, 1.08), "sat": 1.05, "temp": -0.20, "tint": 0.02
-    },
-    "Cinematic Warm": {
-        "mult": (1.08, 1.02, 0.95), "sat": 1.05, "temp": 0.20, "tint": -0.02
-    },
-    "Neon Arctic": {
-        "mult": (0.90, 1.05, 1.15), "sat": 1.20, "temp": -0.30, "tint": 0.05
-    },
-    "Sunset Storm": {
-        "mult": (1.15, 1.03, 0.92), "sat": 1.18, "temp": 0.25, "tint": 0.06
-    },
-    "Pastel Dream": {
-        "mult": (1.03, 1.03, 1.03), "sat": 0.92, "temp": 0.05, "tint": 0.05
-    },
-    "Deep Space": {
-        "mult": (0.95, 0.98, 1.05), "sat": 0.95, "temp": -0.10, "tint": 0.00
-    },
+    "Planetary (Soft)": {"mult": (1.00, 1.00, 1.00), "sat": 1.00, "temp": 0.00, "tint": 0.00},
+    "Cinematic Cool":  {"mult": (0.95, 1.02, 1.08), "sat": 1.05, "temp": -0.20, "tint": 0.02},
+    "Cinematic Warm":  {"mult": (1.08, 1.02, 0.95), "sat": 1.05, "temp": 0.20,  "tint": -0.02},
+    "Neon Arctic":     {"mult": (0.90, 1.05, 1.15), "sat": 1.20, "temp": -0.30, "tint": 0.05},
+    "Sunset Storm":    {"mult": (1.15, 1.03, 0.92), "sat": 1.18, "temp": 0.25,  "tint": 0.06},
+    "Pastel Dream":    {"mult": (1.03, 1.03, 1.03), "sat": 0.92, "temp": 0.05,  "tint": 0.05},
+    "Deep Space":      {"mult": (0.95, 0.98, 1.05), "sat": 0.95, "temp": -0.10, "tint": 0.00},
 }
 
 def apply_palette_preset(base_palette: dict, preset_name: str) -> dict:
@@ -431,7 +399,6 @@ def render_engine(df,palette,theme_name,width,height,seed,blend_mode,bands,swirl
 
     for emo in emotions:
         raw_rgb = palette.get(emo, palette.get("mixed",(210,190,140)))
-        # small jitter for richness
         emo_rgb = np.array(jitter_emotion_color(raw_rgb, emo, amount=0.04))/255.0
         for _ in range(max(1,int(bands))):
             _,alpha = render_corona_layer(width,height,rng,emo_rgb,swirl=swirl,detail=detail,blur_px=blur)
@@ -441,12 +408,61 @@ def render_engine(df,palette,theme_name,width,height,seed,blend_mode,bands,swirl
     return Image.fromarray(out)
 
 # =========================
+# 🔆 Auto Brightness Compensation
+# =========================
+def auto_brightness_compensation(img_arr, target_mean=0.38, strength=1.0,
+                                 black_point_pct=0.08, white_point_pct=0.995,
+                                 max_gain=2.4):
+    """
+    img_arr: float32 in [0,1], RGB
+    1) Lift blacks by subtracting low percentile, 2) scale to white percentile
+    3) Apply global gain to reach target_mean luminance (linear)
+    4) Soft clamp with filmic
+    """
+    arr = np.clip(img_arr, 0, 1).astype(np.float32)
+    lin = srgb_to_linear(arr)
+
+    # luminance
+    Y = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
+
+    # percentile-based black/white points on luminance
+    bp = np.quantile(Y, black_point_pct)
+    wp = np.quantile(Y, white_point_pct)
+    if wp <= bp + 1e-6:
+        wp = bp + 1e-3
+
+    # remap to [0,1] with soft strength
+    Y_remap = np.clip((Y - bp) / (wp - bp), 0, 1)
+    remap_gain = np.clip(strength, 0, 1)
+    Y_final = (1-remap_gain)*Y + remap_gain*Y_remap
+
+    # compute gain to hit target mean
+    meanY = max(Y_final.mean(), 1e-4)
+    gain = np.clip(target_mean / meanY, 1.0/max_gain, max_gain)
+
+    # apply gain in linear to all channels proportionally
+    lin *= gain
+
+    # blend luminance remap into linear result to protect contrast
+    Y2 = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
+    blend = 0.65*remap_gain
+    Y_mix = (1-blend)*Y2 + blend*np.clip(Y_final*gain, 0, 2.5)
+    # rescale RGB to match new luminance ratio
+    ratio = (Y_mix + 1e-6) / (Y2 + 1e-6)
+    lin = np.clip(lin * ratio[...,None], 0, 4)
+
+    # filmic soft clamp and back to sRGB
+    out = filmic_tonemap(np.clip(lin,0,4))
+    out = np.clip(out, 0, 1)
+    out = linear_to_srgb(out)
+    return np.clip(out, 0, 1)
+
+# =========================
 # UI
 # =========================
 
 # ---- 1) Data Source (NewsAPI only)
 st.sidebar.header("1) Data Source (NewsAPI only)")
-# ✅ Keyword 示例写在标签后，不在输入框里
 st.sidebar.markdown("**Keyword** *(e.g., aurora borealis, space weather, AI, technology)*")
 keyword = st.sidebar.text_input("", value="")
 fetch_btn = st.sidebar.button("Fetch News")
@@ -505,11 +521,11 @@ st.sidebar.header("3) Aurora Engine — Corona")
 blend_mode = st.sidebar.selectbox("Blend Mode", ["Additive","Linear Dodge","Normal"],index=0)
 bands = st.sidebar.slider("Bands per Emotion",1,5,3,1)
 st.sidebar.subheader("Corona Settings")
-swirl = st.sidebar.slider("Swirl Strength",0.0,1.5,0.9,0.05)
-detail = st.sidebar.slider("Detail Level",0.2,1.2,0.8,0.05)
-blur = st.sidebar.slider("Blur (px)",0.0,14.0,6.0,0.5)
+swirl = st.sidebar.slider("Swirl Strength",0.0,1.5,0.95,0.05)
+detail = st.sidebar.slider("Detail Level",0.2,1.2,0.9,0.05)
+blur = st.sidebar.slider("Blur (px)",0.0,14.0,5.0,0.5)
 theme_name = st.sidebar.selectbox("Background Theme", list(THEMES.keys()),index=0)
-bg_brightness = st.sidebar.slider("Background Brightness",0.4,1.6,1.0,0.05)
+bg_brightness = st.sidebar.slider("Background Brightness",0.6,1.8,1.1,0.05)
 
 # ---- 4) Cinematic Color System (Controls)
 st.sidebar.header("4) Cinematic Color System")
@@ -520,38 +536,41 @@ palette_mode = st.sidebar.selectbox(
     index=list(CINEMATIC_PRESETS.keys()).index("Planetary (Soft)")
 )
 
-exp = st.sidebar.slider("Exposure", -1.0, 1.0, 0.10, 0.01)
-contrast = st.sidebar.slider("Contrast", 0.50, 1.80, 1.12, 0.01)
-saturation = st.sidebar.slider("Saturation", 0.50, 1.80, 1.10, 0.01)
-gamma_val = st.sidebar.slider("Gamma", 0.70, 1.50, 1.00, 0.01)
-roll = st.sidebar.slider("Highlight Roll-off", 0.00, 1.50, 0.50, 0.01)
+exp = st.sidebar.slider("Exposure (stops)", -0.5, 1.5, 0.35, 0.01)
+contrast = st.sidebar.slider("Contrast", 0.70, 1.80, 1.18, 0.01)
+saturation = st.sidebar.slider("Saturation", 0.70, 1.90, 1.18, 0.01)
+gamma_val = st.sidebar.slider("Gamma", 0.70, 1.40, 0.95, 0.01)
+roll = st.sidebar.slider("Highlight Roll-off", 0.00, 1.50, 0.45, 0.01)
 
 st.sidebar.subheader("White Balance")
-temp = st.sidebar.slider("Temperature (Blue ↔ Red)", -1.0, 1.0, 0.0, 0.01)
-tint = st.sidebar.slider("Tint (Green ↔ Magenta)", -1.0, 1.0, 0.0, 0.01)
+temp = st.sidebar.slider("Temperature (Blue ↔ Red)", -1.0, 1.0, 0.05, 0.01)
+tint = st.sidebar.slider("Tint (Green ↔ Magenta)", -1.0, 1.0, 0.02, 0.01)
 
 st.sidebar.subheader("Split Toning")
 sh_r = st.sidebar.slider("Shadows R", 0.0, 1.0, 0.10, 0.01)
-sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, 0.05, 0.01)
-sh_b = st.sidebar.slider("Shadows B", 0.0, 1.0, 0.12, 0.01)
-hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, 0.10, 0.01)
-hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, 0.08, 0.01)
-hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, 0.06, 0.01)
+sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, 0.06, 0.01)
+sh_b = st.sidebar.slider("Shadows B", 0.0, 1.0, 0.14, 0.01)
+hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, 0.12, 0.01)
+hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, 0.10, 0.01)
+hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, 0.08, 0.01)
 tone_balance = st.sidebar.slider("Tone Balance (Shadows ↔ Highlights)", -1.0, 1.0, 0.0, 0.01)
 
 st.sidebar.subheader("Bloom & Vignette")
-bloom_radius = st.sidebar.slider("Bloom Radius (px)", 0.0, 18.0, 8.0, 0.5)
-bloom_intensity = st.sidebar.slider("Bloom Intensity", 0.0, 1.0, 0.45, 0.01)
-vignette_strength = st.sidebar.slider("Vignette Strength", 0.0, 0.8, 0.22, 0.01)
+bloom_radius = st.sidebar.slider("Bloom Radius (px)", 0.0, 18.0, 9.0, 0.5)
+bloom_intensity = st.sidebar.slider("Bloom Intensity", 0.0, 1.0, 0.48, 0.01)
+vignette_strength = st.sidebar.slider("Vignette Strength", 0.0, 0.8, 0.20, 0.01)
 
-st.sidebar.subheader("Auto Brightness Compensation")
-use_abc = st.sidebar.checkbox("Enable Auto Brightness Compensation", value=True)
-target_luma = st.sidebar.slider("Target Luma", 0.12, 0.35, 0.22, 0.01)
-min_gain = st.sidebar.slider("Min Gain", 0.50, 1.00, 0.85, 0.01)
-max_gain = st.sidebar.slider("Max Gain", 1.00, 2.50, 1.60, 0.01)
+# ---- 5) Auto Brightness Compensation
+st.sidebar.header("5) Auto Brightness Compensation")
+auto_bright = st.sidebar.checkbox("Enable Auto Brightness", value=True)
+target_mean = st.sidebar.slider("Target Mean Luminance", 0.25, 0.60, 0.42, 0.01)
+abc_strength = st.sidebar.slider("Remap Strength", 0.0, 1.0, 0.85, 0.05)
+abc_black = st.sidebar.slider("Black Point Percentile", 0.00, 0.20, 0.06, 0.01)
+abc_white = st.sidebar.slider("White Point Percentile", 0.80, 1.00, 0.995, 0.001)
+abc_max_gain = st.sidebar.slider("Max Gain", 1.0, 3.0, 2.2, 0.05)
 
-# ---- 5) Custom Palette (RGB)
-st.sidebar.header("5) Custom Palette (RGB)")
+# ---- 6) Custom Palette (RGB)
+st.sidebar.header("6) Custom Palette (RGB)")
 use_csv = st.sidebar.checkbox("Use CSV palette",value=st.session_state["use_csv_palette"])
 st.session_state["use_csv_palette"]=use_csv
 
@@ -582,8 +601,8 @@ with st.sidebar.expander("Import / Export Palette CSV",False):
         dl = export_palette_csv(pal)
         st.download_button("Download CSV",data=dl,file_name="palette.csv",mime="text/csv")
 
-# ---- 6) Reset
-st.sidebar.header("6) Output")
+# ---- 7) Reset
+st.sidebar.header("7) Output")
 if st.sidebar.button("Reset All"):
     st.session_state.clear()
     st.rerun()
@@ -600,7 +619,7 @@ with left:
         st.warning("No data points under current filters.")
     else:
         # apply palette preset
-        working_palette, preset_temp, preset_tint = apply_palette_preset(base_palette, palette_mode)
+        working_palette, preset_temp, preset_tint = apply_palette_preset(get_active_palette(), palette_mode)
 
         # render aurora
         img = render_engine(
@@ -628,9 +647,9 @@ with left:
         # highlight roll-off (in linear)
         lin = highlight_rolloff(lin, roll)
 
-        # back to display domain
+        # back to display domain + filmic soft clamp
         arr = linear_to_srgb(np.clip(lin, 0, 4))
-        arr = np.clip(filmic_tonemap(arr*1.25), 0, 1)  # gentle filmic compression
+        arr = np.clip(filmic_tonemap(arr*1.25), 0, 1)
 
         # contrast, saturation, gamma
         arr = adjust_contrast(arr, contrast)
@@ -640,16 +659,23 @@ with left:
         # split toning
         arr = split_tone(arr, (sh_r, sh_g, sh_b), (hi_r, hi_g, hi_b), tone_balance)
 
+        # auto brightness compensation (AFTER creative grading)
+        if auto_bright:
+            arr = auto_brightness_compensation(
+                arr,
+                target_mean=target_mean,
+                strength=abc_strength,
+                black_point_pct=abc_black,
+                white_point_pct=abc_white,
+                max_gain=abc_max_gain
+            )
+
         # bloom & vignette
         arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
         arr = apply_vignette(arr, strength=vignette_strength)
 
         # ensure colorfulness
-        arr = ensure_colorfulness(arr, min_sat=0.14, boost=1.18)
-
-        # ✅ Auto Brightness Compensation (最后一步，稳定总体亮度)
-        if use_abc:
-            arr = auto_brightness_comp(arr, target_luma=target_luma, min_gain=min_gain, max_gain=max_gain)
+        arr = ensure_colorfulness(arr, min_sat=0.16, boost=1.20)
 
         final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8), mode="RGB")
 
