@@ -17,15 +17,27 @@ st.title("🌌 Emotional Aurora — Wang Xinru — Final Project")
 # ✅ Instructions
 with st.expander("Instructions", expanded=False):
     st.markdown("""
-### How to Use  
-This project turns live news emotions into **Corona-style aurora** with a **cinematic color system** and **Auto Brightness Compensation** so images are always bright.
+How to Use
 
-**1) Fetch Data** – NewsAPI only. Enter a keyword.  
-**2) Emotion Mapping** – VADER → curated emotions; filter by range.  
-**3) Aurora Engine (Corona)** – swirl, bands, blur, modes, themes.  
-**4) Cinematic Color System** – exposure/contrast/gamma/saturation, WB, split-toning, bloom, vignette, **Auto Brightness**.  
-**5) Palette** – fixed per emotion; add custom RGB; CSV import/export.  
-**6) Download** – save PNG.
+This app transforms emotions mined from live news into Corona-style aurora, graded with a cinematic color pipeline and Auto Brightness Compensation to keep images bright.
+
+1) Fetch Data (NewsAPI)
+Enter a keyword (e.g., aurora borealis, space weather, AI, technology) and click Fetch News. Headlines are analyzed with VADER.
+
+2) Emotion Mapping
+Texts are mapped to a curated emotion set. Use the Compound Range slider and Show Emotions to filter what’s visualized.
+
+3) Aurora Engine — Corona
+Tune the look with Swirl, Bands per Emotion, Blur, Blend Mode, and Background Theme.
+
+4) Cinematic Color System
+Refine the image with Exposure, Contrast, Gamma, Saturation, White Balance (Temperature/Tint), Split Toning (shadows/highlights), Bloom, Vignette, and Auto Brightness Compensation (keeps images bright without clipping).
+
+5) Palette
+Each emotion has a fixed color. Add your own via RGB, or Import/Export a CSV palette.
+
+6) Download
+Save the final render as PNG.
 """)
 
 # =========================
