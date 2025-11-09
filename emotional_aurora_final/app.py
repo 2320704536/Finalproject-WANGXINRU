@@ -19,11 +19,11 @@ with st.expander("Instructions", expanded=False):
     st.markdown("""
 ### How to Use This Project  
 
-**This project visualizes real-time emotions extracted from news articles as cinematic aurora patterns.**
+**This project visualizes real-time emotions extracted from news articles as aurora patterns.**
 
 **1. Fetch Data**  
 - Use *NewsAPI* to fetch headlines  
-- Enter a keyword (e.g., *aurora*, *technology*, *science*)  
+- Enter a keyword (e.g., *AI*，*aurora*, *technology*, *science*)  
 - Sentiment is analyzed using VADER  
 
 **2. Emotion Classification**  
