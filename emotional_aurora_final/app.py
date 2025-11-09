@@ -3,6 +3,259 @@ import pandas as pd
 import numpy as np
 from io import BytesIO
 from PIL import Image, ImageFilter
+import requests
+from datetime import date
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+
+# ======================================================
+# App Config
+# ======================================================
+st.set_page_config(
+    page_title="Emotional Aurora — Wang Xinru — Final Project",
+    page_icon="🌌",
+    layout="wide"
+)
+
+st.title("🌌 Emotional Aurora — Wang Xinru — Final Project")
+
+# ======================================================
+# Instructions
+# ======================================================
+with st.expander("Instructions", expanded=False):
+    st.markdown("""
+### How to Use This Project
+
+**1. Fetch Data from NewsAPI**  
+Enter a keyword (examples below). Headlines will be analyzed.
+
+**2. Sentiment → Emotion Mapping**  
+Text is classified into 20+ curated emotional categories.
+
+**3. Aurora Rendering (Corona Engine)**  
+Each emotion generates aurora bands.  
+Colors come from your palette + cinematic color engine.
+
+**4. Custom Palette**  
+Add your own RGB colors or import CSV palettes.
+
+**5. Download**  
+Save the final Aurora image as PNG.
+---
+""")
+
+# ======================================================
+# Load VADER
+# ======================================================
+@st.cache_resource(show_spinner=False)
+def load_vader():
+    try:
+        nltk.data.find("sentiment/vader_lexicon")
+    except LookupError:
+        nltk.download("vader_lexicon")
+    return SentimentIntensityAnalyzer()
+
+sia = load_vader()
+
+# ======================================================
+# Fetch NewsAPI
+# ======================================================
+def fetch_news(api_key, keyword="aurora", page_size=50):
+    url = "https://newsapi.org/v2/everything"
+    params = {
+        "q": keyword,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": page_size,
+        "apiKey": api_key,
+    }
+    try:
+        r = requests.get(url, params=params, timeout=12)
+        data = r.json()
+        if data.get("status") != "ok":
+            st.warning("NewsAPI error: " + str(data.get("message")))
+            return pd.DataFrame()
+
+        rows = []
+        for a in data.get("articles", []):
+            txt = (a.get("title") or "") + " - " + (a.get("description") or "")
+            rows.append({
+                "timestamp": (a.get("publishedAt") or "")[:10],
+                "source": (a.get("source") or {}).get("name",""),
+                "text": txt.strip(" -"),
+            })
+        return pd.DataFrame(rows)
+    except Exception as e:
+        st.error("Error fetching NewsAPI: " + str(e))
+        return pd.DataFrame()
+
+# ======================================================
+# Default Emotion Colors
+# ======================================================
+DEFAULT_RGB = {
+    "joy": (230,200,110),"love":(235,180,175),"pride":(200,170,210),
+    "hope":(160,220,200),"curiosity":(175,210,200),"calm":(140,180,230),
+    "surprise":(240,190,150),"neutral":(180,180,185),"sadness":(100,130,180),
+    "anger":(180,80,70),"fear":(130,110,160),"disgust":(130,140,110),
+    "anxiety":(210,190,140),"boredom":(120,120,130),"nostalgia":(235,220,190),
+    "gratitude":(175,220,220),"awe":(190,230,240),"trust":(100,170,160),
+    "confusion":(210,170,175),"mixed":(210,190,140),
+}
+
+COLOR_NAMES = {
+    "joy": "Warm Jupiter Gold","love": "Venus Rose","pride": "Saturn Violet",
+    "hope": "Uranus Mint","curiosity": "Soft Turquoise","calm": "Neptune Blue",
+    "surprise": "Dawn Peach","neutral": "Lunar Gray","sadness": "Deep Ocean Blue",
+    "anger": "Mars Red","fear": "Shadow Purple","disgust": "Olive Gray",
+    "anxiety": "Desert Sand","boredom": "Slate Gray","nostalgia": "Pale Cream",
+    "gratitude": "Soft Cyan","awe": "Ice Blue","trust": "Sea Teal",
+    "confusion": "Dust Pink","mixed": "Pale Gold",
+}
+
+ALL_EMOTIONS = list(DEFAULT_RGB.keys())
+
+# ======================================================
+# Emotion Classification
+# ======================================================
+def analyze_sentiment(text):
+    if not isinstance(text,str) or not text.strip():
+        return {"neg":0,"neu":1,"pos":0,"compound":0}
+    return sia.polarity_scores(text)
+
+def classify_emotion_expanded(row):
+    pos, neu, neg, comp = row["pos"],row["neu"],row["neg"],row["compound"]
+    if comp>=0.7 and pos>0.5: return "joy"
+    if comp>=0.55 and pos>0.45: return "love"
+    if comp>=0.45 and pos>0.40: return "pride"
+    if 0.25<=comp<0.45 and pos>0.30: return "hope"
+    if 0.10<=comp<0.25 and neu>=0.5: return "calm"
+    if 0.25<=comp<0.60 and neu<0.5: return "surprise"
+    if comp<=-0.65 and neg>0.5: return "anger"
+    if -0.65<comp<=-0.40 and neg>0.45: return "fear"
+    if -0.40<comp<=-0.15 and neg>=0.35: return "sadness"
+    if neg>0.5 and neu>0.3: return "anxiety"
+    if neg>0.45 and pos<0.1: return "disgust"
+    if neu>0.75 and abs(comp)<0.1: return "boredom"
+    if pos>0.35 and neu>0.4 and 0<=comp<0.25: return "trust"
+    if pos>0.30 and neu>0.35 and -0.05<=comp<=0.05: return "nostalgia"
+    if pos>0.25 and neg>0.25: return "mixed"
+    if pos>0.20 and neu>0.50 and comp>0.05: return "curiosity"
+    if neu>0.6 and 0.05<=comp<=0.15: return "awe"
+    return "neutral"
+
+# ======================================================
+# Palette State
+# ======================================================
+def init_palette_state():
+    if "use_csv_palette" not in st.session_state:
+        st.session_state["use_csv_palette"] = False
+    if "custom_palette" not in st.session_state:
+        st.session_state["custom_palette"] = {}
+
+def get_active_palette():
+    if st.session_state["use_csv_palette"]:
+        return dict(st.session_state["custom_palette"])
+    merged = dict(DEFAULT_RGB)
+    merged.update(st.session_state.get("custom_palette",{}))
+    return merged
+
+def add_custom_emotion(name,r,g,b):
+    if not name: return
+    st.session_state["custom_palette"][name.strip()] = (int(r),int(g),int(b))
+
+def import_palette_csv(file):
+    try:
+        dfc = pd.read_csv(file)
+        need = {"emotion","r","g","b"}
+        cols = {c.lower():c for c in dfc.columns}
+        if not need.issubset(cols.keys()):
+            st.error("CSV must include emotion,r,g,b columns")
+            return
+        pal = {}
+        for _,row in dfc.iterrows():
+            emo = str(row[cols["emotion"]]).strip()
+            try:
+                r=int(row[cols["r"]]); g=int(row[cols["g"]]); b=int(row[cols["b"]])
+            except:
+                continue
+            pal[emo]=(r,g,b)
+        st.session_state["custom_palette"] = pal
+        st.success(f"Imported {len(pal)} colors.")
+    except Exception as e:
+        st.error("CSV import error: "+str(e))
+
+def export_palette_csv(pal):
+    buf = BytesIO()
+    pd.DataFrame(
+        [{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()]
+    ).to_csv(buf,index=False)
+    buf.seek(0)
+    return buf
+
+# ======================================================
+# Gradient Background
+# ======================================================
+THEMES = {
+    "Deep Night": ((0.02,0.03,0.08),(0,0,0)),
+    "Polar Twilight": ((0.06,0.08,0.16),(0,0,0)),
+    "Dawn Haze": ((0.12,0.09,0.12),(0,0,0)),
+}
+
+def vertical_gradient(width,height,top_rgb,bottom_rgb,brightness=1.0):
+    t=np.array(top_rgb)*brightness
+    b=np.array(bottom_rgb)*brightness
+    grad=np.linspace(0,1,height).reshape(height,1,1)
+    img = t.reshape(1,1,3)*(1-grad)+b.reshape(1,1,3)*grad
+    img=(img*255).astype(np.uint8)
+    img=np.tile(img,(1,width,1))
+    img=np.ascontiguousarray(img)
+    return Image.fromarray(img)
+
+# ======================================================
+# fBm Noise
+# ======================================================
+def fbm_noise(h,w,rng,octaves=5,base_scale=96,persistence=0.55,lacunarity=2.0):
+    acc=np.zeros((h,w),dtype=np.float32)
+    amp=1.0
+    scale=base_scale
+    for _ in range(octaves):
+        gh=max(1,h//max(1,scale))
+        gw=max(1,w//max(1,scale))
+        g=rng.random((gh,gw)).astype(np.float32)
+        layer=np.array(
+            Image.fromarray((g*255).astype(np.uint8)).resize((w,h),Image.BICUBIC),
+            dtype=np.float32
+        )/255.
+        acc+=layer*amp
+        amp*=persistence
+        scale=max(1,int(scale/lacunarity))
+    acc-=acc.min()
+    if acc.max()>1e-6:
+        acc/=acc.max()
+    return acc
+
+# ======================================================
+# Auto Brightness Compensation System
+# ======================================================
+def auto_brightness_compensate(img_arr, target_luma=0.34, max_boost=1.9):
+    luma = (
+        img_arr[:,:,0]*0.299 +
+        img_arr[:,:,1]*0.587 +
+        img_arr[:,:,2]*0.114
+    )
+    cur=float(np.mean(luma))
+    if cur>=target_luma:
+        return img_arr
+    boost=target_luma/(cur+1e-6)
+    boost=min(boost,max_boost)
+    img_arr=img_arr*boost
+    img_arr=np.clip(img_arr,0,1)
+    return img_arr
+import streamlit as st
+import pandas as pd
+import numpy as np
+from io import BytesIO
+from PIL import Image, ImageFilter
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
@@ -19,33 +272,28 @@ with st.expander("Instructions", expanded=False):
     st.markdown("""
 ### How to Use This Project  
 
-**This project visualizes real-time emotions extracted from news articles as aurora patterns, then applies a cinematic color grading pipeline.**
+This project visualizes real-time emotions extracted from news articles as aurora patterns (Corona only).
 
-**1) Fetch Data**  
-- Use *NewsAPI* to fetch headlines  
-- Enter a keyword (e.g., *AI*, *aurora borealis*, *technology*, *science*)  
-- Sentiment is analyzed using VADER and mapped to curated emotions  
+**1) Fetch Data**
+- Use **NewsAPI** to fetch headlines
+- Enter a keyword (e.g., *AI*, *aurora*, *technology*, *science*)
+- Sentiment is analyzed using **VADER**
 
-**2) Emotion Classification**  
-- Each text is mapped to 20+ emotions  
-- You can filter emotions and compound score  
+**2) Emotion Classification**
+- Each text is mapped to one of 20+ curated emotions
+- Filter by emotions / compound score
 
-**3) Aurora Rendering (Corona)**  
-- Corona-style aurora with spiral structure  
-- Each emotion produces one or more aurora bands  
-- Base colors come from palette (planet-like or cinematic presets)  
+**3) Aurora Rendering**
+- **Corona-style** aurora only
+- Each emotion generates one or more aurora bands
+- Color comes from your palette (default + custom RGB/CSV)
 
-**4) Cinematic Color System**  
-- Exposure, Contrast, Gamma, Saturation  
-- Highlight roll-off (filmic look)  
-- White balance (Temperature & Tint)  
-- Split toning for shadows/highlights  
-- Bloom (glow) and Vignette (dark corners)  
-- Always-colorful safeguard (auto saturation boost)
+**4) Auto Brightness Compensation (ABC)**
+- Measures scene luminance and automatically adjusts exposure & gamma
+- Optional saturation boost and soft local-contrast
 
-**5) Download**  
-- Export the image as PNG  
----
+**5) Output**
+- Download the generated PNG
 """)
 
 # =========================
@@ -266,147 +514,55 @@ def render_corona_layer(width,height,rng,color_rgb,swirl=1.0,detail=0.8,blur_px=
     return rgb, alpha
 
 # =========================
-# 🎬 Cinematic Color System
+# 🎬 Auto Brightness Compensation (ABC)
 # =========================
+def compute_luminance(img):  # img in 0..1, shape (H,W,3)
+    # Rec. 709 luminance
+    return 0.2126*img[...,0] + 0.7152*img[...,1] + 0.0722*img[...,2]
 
-def srgb_to_linear(x):
-    x = np.clip(x, 0, 1)
-    return np.where(x <= 0.04045, x/12.92, ((x+0.055)/1.055)**2.4)
+def saturation_boost(img, sat=1.0):
+    if abs(sat-1.0) < 1e-6: return img
+    gray = compute_luminance(img)[...,None]
+    return np.clip(gray + (img - gray)*sat, 0.0, 1.0)
 
-def linear_to_srgb(x):
-    x = np.clip(x, 0, 1)
-    return np.where(x < 0.0031308, x*12.92, 1.055*(x**(1/2.4)) - 0.055)
+def soft_local_contrast(img, amount=0.0, radius=25):
+    if amount <= 0: return img
+    # Unsharp mask style using Gaussian blur from PIL
+    pil = Image.fromarray((np.clip(img,0,1)*255).astype(np.uint8))
+    blur = pil.filter(ImageFilter.GaussianBlur(radius=radius))
+    base = np.asarray(blur).astype(np.float32)/255.0
+    enhanced = np.clip(img*(1+amount) - base*amount, 0.0, 1.0)
+    return enhanced
 
-def filmic_tonemap(x):
-    # Simple filmic-like curve (ACES-ish vibe, fast)
-    A = 0.22; B = 0.30; C = 0.10; D = 0.20; E = 0.01; F = 0.30
-    return ((x*(A*x + C*B) + D*E) / (x*(A*x + B) + D*F)) - E/F
+def auto_brightness_compensation(img, target_mean=0.24, gain_limit=(0.6, 2.4),
+                                 gamma_base=1.0, highlight_protect=0.15):
+    """
+    img: float32 0..1
+    target_mean: desired luminance mean
+    gain_limit: (min_gain, max_gain)
+    gamma_base: base gamma correction (>0, around 1.0~1.2)
+    highlight_protect: 0..1, strength of rolloff to protect highlights
+    """
+    lum = compute_luminance(img)
+    cur = float(np.mean(lum) + 1e-6)
+    gain = np.clip(target_mean / cur, gain_limit[0], gain_limit[1])
 
-def apply_white_balance(img, temp, tint):
-    # temp: [-1,1] (blue<->red), tint: [-1,1] (green<->magenta)
-    r, g, b = img[:,:,0], img[:,:,1], img[:,:,2]
-    r *= (1.0 + 0.10*temp)
-    b *= (1.0 - 0.10*temp)
-    g *= (1.0 + 0.08*tint)
-    r *= (1.0 - 0.06*tint)
-    b *= (1.0 - 0.02*tint)
-    out = np.stack([r,g,b], axis=-1)
-    return np.clip(out, 0, 1)
+    # Gamma: darker scenes -> smaller denominator -> stronger lift
+    gamma = max(0.2, gamma_base / (0.7 + 0.3 * (cur / target_mean)))
+    out = np.clip((img ** gamma) * gain, 0.0, 1.0)
 
-def adjust_contrast(img, c):
-    # c in [0.2, 2.0], pivot 0.5
-    return np.clip((img - 0.5)*c + 0.5, 0, 1)
+    # Simple filmic roll-off for highlights
+    if highlight_protect > 0:
+        t = highlight_protect
+        out = (out * (1 + t*out)) / (out + t)  # Reinhard-like
 
-def adjust_saturation(img, s):
-    # s in [0, 2]
-    lum = 0.2126*img[:,:,0] + 0.7152*img[:,:,1] + 0.0722*img[:,:,2]
-    lum = lum[...,None]
-    return np.clip(lum + (img - lum)*s, 0, 1)
-
-def gamma_correct(img, g):
-    # g: gamma > 0; g>1 darker mids; g<1 brighter
-    return np.clip(img ** (1.0/g), 0, 1)
-
-def highlight_rolloff(img, roll):
-    # roll in [0,1.5] – compress highlights smoothly
-    t = np.clip(roll, 0.0, 1.5)
-    out = img.copy()
-    threshold = 0.8
-    mask = np.clip((img - threshold)/(1e-6 + 1.0 - threshold), 0, 1)
-    out = img*(1 - mask) + (threshold + (img-threshold)/(1.0 + 4.0*t*mask))*mask
-    return np.clip(out, 0, 1)
-
-def split_tone(img, sh_rgb, hi_rgb, balance):
-    # balance [-1..1]: <0 favors shadows, >0 favors highlights
-    lum = 0.2126*img[:,:,0] + 0.7152*img[:,:,1] + 0.0722*img[:,:,2]
-    lum = (lum - lum.min())/(lum.max()-lum.min()+1e-6)
-    sh = np.clip(1.0 - lum + 0.5*(1-balance), 0, 1)[...,None]
-    hi = np.clip(lum + 0.5*(1+balance) - 0.5, 0, 1)[...,None]
-    sh_col = np.array(sh_rgb).reshape(1,1,3)
-    hi_col = np.array(hi_rgb).reshape(1,1,3)
-    out = np.clip(img + sh*sh_col*0.25 + hi*hi_col*0.25, 0, 1)
-    return out
-
-def apply_bloom(img, radius=6.0, intensity=0.6):
-    pil = Image.fromarray((np.clip(img,0,1)*255).astype(np.uint8), mode="RGB")
-    if radius > 0:
-        blurred = pil.filter(ImageFilter.GaussianBlur(radius=radius))
-        b = np.array(blurred).astype(np.float32)/255.0
-        out = np.clip(img*(1-intensity) + b*intensity, 0, 1)
-        return out
-    return img
-
-def apply_vignette(img, strength=0.25):
-    h, w, _ = img.shape
-    yy, xx = np.mgrid[0:h, 0:w]
-    xx = (xx - w/2)/(w/2); yy = (yy - h/2)/(h/2)
-    r = np.sqrt(xx*xx + yy*yy)
-    mask = np.clip(1 - strength*(r**1.5), 0.0, 1.0)
-    return np.clip(img * mask[...,None], 0, 1)
-
-def ensure_colorfulness(img, min_sat=0.15, boost=1.25):
-    # compute mean saturation in HSV-like manner, boost if too low
-    r,g,b = img[:,:,0], img[:,:,1], img[:,:,2]
-    mx = np.maximum(np.maximum(r,g), b)
-    mn = np.minimum(np.minimum(r,g), b)
-    sat = (mx - mn) / (mx + 1e-6)
-    if sat.mean() < min_sat:
-        return adjust_saturation(img, boost)
-    return img
+    return np.clip(out, 0.0, 1.0)
 
 # =========================
-# 🎨 Cinematic Palettes
-# =========================
-CINEMATIC_PRESETS = {
-    "Planetary (Soft)": {
-        "mult": (1.00, 1.00, 1.00), "sat": 1.00, "temp": 0.00, "tint": 0.00
-    },
-    "Cinematic Cool": {
-        "mult": (0.95, 1.02, 1.08), "sat": 1.05, "temp": -0.20, "tint": 0.02
-    },
-    "Cinematic Warm": {
-        "mult": (1.08, 1.02, 0.95), "sat": 1.05, "temp": 0.20, "tint": -0.02
-    },
-    "Neon Arctic": {
-        "mult": (0.90, 1.05, 1.15), "sat": 1.20, "temp": -0.30, "tint": 0.05
-    },
-    "Sunset Storm": {
-        "mult": (1.15, 1.03, 0.92), "sat": 1.18, "temp": 0.25, "tint": 0.06
-    },
-    "Pastel Dream": {
-        "mult": (1.03, 1.03, 1.03), "sat": 0.92, "temp": 0.05, "tint": 0.05
-    },
-    "Deep Space": {
-        "mult": (0.95, 0.98, 1.05), "sat": 0.95, "temp": -0.10, "tint": 0.00
-    },
-}
-
-def apply_palette_preset(base_palette: dict, preset_name: str) -> dict:
-    p = CINEMATIC_PRESETS.get(preset_name, CINEMATIC_PRESETS["Planetary (Soft)"])
-    mult = np.array(p["mult"])
-    sat = p["sat"]
-    out = {}
-    for k, rgb in base_palette.items():
-        col = np.array(rgb)/255.0
-        col = np.clip(col * mult, 0, 1)
-        # saturation tweak
-        col = adjust_saturation(col.reshape(1,1,3), sat)[0,0,:]
-        out[k] = tuple((col*255).astype(int).tolist())
-    return out, p["temp"], p["tint"]
-
-def jitter_emotion_color(rgb, emo_key, amount=0.05):
-    # deterministic small jitter by emotion key: vary hue/val slightly
-    rng = np.random.default_rng(abs(hash(emo_key)) % (2**32))
-    jitter = (rng.random(3)-0.5)*2*amount
-    col = np.clip(np.array(rgb)/255.0 + jitter, 0, 1)
-    return tuple((col*255).astype(int).tolist())
-
-# =========================
-# ✅ Aurora Engine — Corona Only
+# ✅ Aurora Engine — Corona Only (returns float array)
 # =========================
 def render_engine(df,palette,theme_name,width,height,seed,blend_mode,bands,swirl,detail,blur,bg_brightness):
     rng = np.random.default_rng(seed)
-
     top,bottom = THEMES[theme_name]
     bg = vertical_gradient(width,height,top,bottom,brightness=bg_brightness)
     base = np.array(bg).astype(np.float32)/255.0
@@ -416,15 +572,12 @@ def render_engine(df,palette,theme_name,width,height,seed,blend_mode,bands,swirl
         emotions = ["hope","calm","awe"]
 
     for emo in emotions:
-        raw_rgb = palette.get(emo, palette.get("mixed",(210,190,140)))
-        # small jitter for richness
-        emo_rgb = np.array(jitter_emotion_color(raw_rgb, emo, amount=0.04))/255.0
+        color = np.array(palette.get(emo,palette["mixed"]))/255.0
         for _ in range(max(1,int(bands))):
-            _,alpha = render_corona_layer(width,height,rng,emo_rgb,swirl=swirl,detail=detail,blur_px=blur)
-            base = apply_band(base, tuple(emo_rgb.tolist()), alpha, blend_mode)
+            _, alpha = render_corona_layer(width,height,rng,color,swirl=swirl,detail=detail,blur_px=blur)
+            base = apply_band(base,color,alpha,blend_mode)
 
-    out = (np.clip(base,0,1)*255).astype(np.uint8)
-    return Image.fromarray(out)
+    return np.clip(base, 0.0, 1.0)  # float array
 
 # =========================
 # UI
@@ -432,17 +585,18 @@ def render_engine(df,palette,theme_name,width,height,seed,blend_mode,bands,swirl
 
 # ---- 1) Data Source (NewsAPI only)
 st.sidebar.header("1) Data Source (NewsAPI only)")
-st.sidebar.markdown("**Keyword** *(e.g., aurora borealis, space weather, AI, technology)*")
+# Keyword example AFTER the label (not in placeholder)
+st.sidebar.markdown("**Keyword** *(e.g., AI, aurora borealis, space weather, technology)*")
 keyword = st.sidebar.text_input("", value="")
-fetch_btn = st.sidebar.button("Fetch News")
 
+fetch_btn = st.sidebar.button("Fetch News")
 df = pd.DataFrame()
 if fetch_btn:
     key = st.secrets.get("NEWS_API_KEY","")
     if not key:
         st.sidebar.error("Missing NEWS_API_KEY in Secrets")
     else:
-        df = fetch_news(key,keyword if keyword.strip() else "aurora")
+        df = fetch_news(key,keyword)
 
 if df.empty:
     df = pd.DataFrame({"text":[
@@ -466,21 +620,20 @@ st.sidebar.header("2) Emotion Mapping")
 cmp_min, cmp_max = st.sidebar.slider("Compound Range", -1.0,1.0,(-1.0,1.0),0.01)
 
 init_palette_state()
-base_palette = get_active_palette()
+palette = get_active_palette()
 
 available_emotions = sorted(df["emotion"].unique().tolist())
-custom_emotions = sorted(set(base_palette.keys()) - set(DEFAULT_RGB.keys()))
+custom_emotions = sorted(set(palette.keys()) - set(DEFAULT_RGB.keys()))
 all_emotions_for_ui = list(ALL_EMOTIONS) + [e for e in custom_emotions if e not in ALL_EMOTIONS]
 
 def _label_emotion(e: str) -> str:
     if e in COLOR_NAMES:
         return f"{e} ({COLOR_NAMES[e]})"
-    r, g, b = base_palette.get(e, (0, 0, 0))
+    r, g, b = palette.get(e, (0, 0, 0))
     return f"{e} (Custom {r},{g},{b})"
 
 options_labels = [_label_emotion(e) for e in all_emotions_for_ui]
 default_labels = [_label_emotion(e) for e in available_emotions] if available_emotions else options_labels
-
 selected_labels = st.sidebar.multiselect("Show Emotions:", options_labels, default=default_labels)
 selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 df=df[(df["emotion"].isin(selected_emotions))&(df["compound"]>=cmp_min)&(df["compound"]<=cmp_max)]
@@ -489,57 +642,39 @@ df=df[(df["emotion"].isin(selected_emotions))&(df["compound"]>=cmp_min)&(df["com
 st.sidebar.header("3) Aurora Engine — Corona")
 blend_mode = st.sidebar.selectbox("Blend Mode", ["Additive","Linear Dodge","Normal"],index=0)
 bands = st.sidebar.slider("Bands per Emotion",1,5,3,1)
+
 st.sidebar.subheader("Corona Settings")
 swirl = st.sidebar.slider("Swirl Strength",0.0,1.5,0.9,0.05)
 detail = st.sidebar.slider("Detail Level",0.2,1.2,0.8,0.05)
 blur = st.sidebar.slider("Blur (px)",0.0,14.0,6.0,0.5)
+
 theme_name = st.sidebar.selectbox("Background Theme", list(THEMES.keys()),index=0)
 bg_brightness = st.sidebar.slider("Background Brightness",0.4,1.6,1.0,0.05)
 
-# ---- 4) Cinematic Color System (Controls)
-st.sidebar.header("4) Cinematic Color System")
+# ---- 4) Color & ABC (NEW)
+st.sidebar.header("4) Color & Auto-Brightness")
+sat = st.sidebar.slider("Saturation", 0.8, 1.6, 1.15, 0.01)
+abc_on = st.sidebar.checkbox("Enable Auto Brightness Compensation (ABC)", value=True)
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    target_mean = st.slider("Target Luminance", 0.18, 0.38, 0.26, 0.01)
+    gamma_base = st.slider("Base Gamma", 0.7, 1.4, 1.05, 0.01)
+with col2:
+    max_gain = st.slider("Max Gain", 1.2, 3.0, 2.2, 0.1)
+    hl_protect = st.slider("Highlight Protect", 0.00, 0.40, 0.18, 0.01)
+loc_contrast = st.sidebar.slider("Soft Local Contrast", 0.00, 0.60, 0.18, 0.01)
 
-palette_mode = st.sidebar.selectbox(
-    "Palette Preset",
-    list(CINEMATIC_PRESETS.keys()),
-    index=list(CINEMATIC_PRESETS.keys()).index("Planetary (Soft)")
-)
-
-exp = st.sidebar.slider("Exposure", -1.0, 1.0, 0.10, 0.01)
-contrast = st.sidebar.slider("Contrast", 0.50, 1.80, 1.12, 0.01)
-saturation = st.sidebar.slider("Saturation", 0.50, 1.80, 1.10, 0.01)
-gamma_val = st.sidebar.slider("Gamma", 0.70, 1.50, 1.00, 0.01)
-roll = st.sidebar.slider("Highlight Roll-off", 0.00, 1.50, 0.50, 0.01)
-
-st.sidebar.subheader("White Balance")
-temp = st.sidebar.slider("Temperature (Blue ↔ Red)", -1.0, 1.0, 0.0, 0.01)
-tint = st.sidebar.slider("Tint (Green ↔ Magenta)", -1.0, 1.0, 0.0, 0.01)
-
-st.sidebar.subheader("Split Toning")
-sh_r = st.sidebar.slider("Shadows R", 0.0, 1.0, 0.10, 0.01)
-sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, 0.05, 0.01)
-sh_b = st.sidebar.slider("Shadows B", 0.0, 1.0, 0.12, 0.01)
-hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, 0.10, 0.01)
-hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, 0.08, 0.01)
-hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, 0.06, 0.01)
-tone_balance = st.sidebar.slider("Tone Balance (Shadows ↔ Highlights)", -1.0, 1.0, 0.0, 0.01)
-
-st.sidebar.subheader("Bloom & Vignette")
-bloom_radius = st.sidebar.slider("Bloom Radius (px)", 0.0, 18.0, 8.0, 0.5)
-bloom_intensity = st.sidebar.slider("Bloom Intensity", 0.0, 1.0, 0.45, 0.01)
-vignette_strength = st.sidebar.slider("Vignette Strength", 0.0, 0.8, 0.22, 0.01)
-
-# ---- 5) Custom Palette (RGB)
+# ---- 5) Custom Palette
 st.sidebar.header("5) Custom Palette (RGB)")
 use_csv = st.sidebar.checkbox("Use CSV palette",value=st.session_state["use_csv_palette"])
 st.session_state["use_csv_palette"]=use_csv
 
 with st.sidebar.expander("Add Custom Emotion",False):
-    col1,col2,col3,col4=st.columns([1.8,1,1,1])
-    name=col1.text_input("Emotion")
-    r=col2.number_input("R",0,255,210)
-    g=col3.number_input("G",0,255,190)
-    b=col4.number_input("B",0,255,140)
+    colA,colB,colC,colD=st.columns([1.8,1,1,1])
+    name=colA.text_input("Emotion")
+    r=colB.number_input("R",0,255,210)
+    g=colC.number_input("G",0,255,190)
+    b=colD.number_input("B",0,255,140)
     if st.button("Add"):
         add_custom_emotion(name,r,g,b)
     show = st.session_state.get("custom_palette",{})
@@ -570,7 +705,7 @@ if st.sidebar.button("Reset All"):
 # =========================
 # DRAW SECTION
 # =========================
-left, right = st.columns([0.60,0.40])
+left, right = st.columns([0.6,0.4])
 
 with left:
     st.subheader("🌌 Aurora")
@@ -578,13 +713,9 @@ with left:
     if df.empty:
         st.warning("No data points under current filters.")
     else:
-        # apply palette preset
-        working_palette, preset_temp, preset_tint = apply_palette_preset(base_palette, palette_mode)
-
-        # render aurora
-        img = render_engine(
-            df, working_palette, theme_name,
-            width=1500, height=850,
+        img_arr = render_engine(
+            df,palette,theme_name,
+            width=1500,height=850,
             seed=np.random.randint(0,999999),
             blend_mode=blend_mode,
             bands=bands,
@@ -594,43 +725,23 @@ with left:
             bg_brightness=bg_brightness
         )
 
-        # ======== Cinematic Color Pipeline ========
-        arr = np.array(img).astype(np.float32)/255.0
+        # Color pipeline: saturation -> ABC -> local contrast
+        img_arr = saturation_boost(img_arr, sat=sat)
+        if abc_on:
+            img_arr = auto_brightness_compensation(
+                img_arr, target_mean=target_mean,
+                gain_limit=(0.6, float(max_gain)),
+                gamma_base=gamma_base,
+                highlight_protect=hl_protect
+            )
+        img_arr = soft_local_contrast(img_arr, amount=loc_contrast, radius=24)
 
-        # exposure (linear domain)
-        lin = srgb_to_linear(arr)
-        lin = lin * (2.0 ** exp)
+        out = (np.clip(img_arr,0,1)*255).astype(np.uint8)
+        img = Image.fromarray(out)
+        buf=BytesIO(); img.save(buf, format="PNG"); buf.seek(0)
 
-        # white balance: preset + user
-        lin = apply_white_balance(lin, temp + preset_temp, tint + preset_tint)
-
-        # highlight roll-off (in linear)
-        lin = highlight_rolloff(lin, roll)
-
-        # back to display domain
-        arr = linear_to_srgb(np.clip(lin, 0, 4))
-        arr = np.clip(filmic_tonemap(arr*1.25), 0, 1)  # gentle filmic compression
-
-        # contrast, saturation, gamma
-        arr = adjust_contrast(arr, contrast)
-        arr = adjust_saturation(arr, saturation)
-        arr = gamma_correct(arr, gamma_val)
-
-        # split toning
-        arr = split_tone(arr, (sh_r, sh_g, sh_b), (hi_r, hi_g, hi_b), tone_balance)
-
-        # bloom & vignette
-        arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
-        arr = apply_vignette(arr, strength=vignette_strength)
-
-        # ensure colorfulness
-        arr = ensure_colorfulness(arr, min_sat=0.14, boost=1.18)
-
-        final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8), mode="RGB")
-
-        buf=BytesIO(); final_img.save(buf, format="PNG"); buf.seek(0)
         st.image(buf,use_column_width=True)
-        st.download_button("💾 Download PNG",data=buf,file_name="aurora_cinematic.png",mime="image/png")
+        st.download_button("💾 Download PNG",data=buf,file_name="aurora_corona.png",mime="image/png")
 
 with right:
     st.subheader("📊 Data & Emotion")
@@ -644,4 +755,4 @@ with right:
     st.dataframe(df2[cols],use_container_width=True,height=600)
 
 st.markdown("---")
-st.caption("© 2025 Emotional Aurora — Cinematic Corona Edition")
+st.caption("© 2025 Emotional Aurora — Corona Edition (with Auto Brightness Compensation)")
