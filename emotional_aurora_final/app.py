@@ -492,7 +492,7 @@ if df.empty:
 
 df["text"]=df["text"].fillna("")
 sent_df=df["text"].apply(analyze_sentiment).apply(pd.Series)
-df=pd.concat([df.reset_index(drop_down=True),sent_df.reset_index(drop=True)],axis=1)
+df = pd.concat([df.reset_index(drop=True), sent_df.reset_index(drop=True)], axis=1)
 df["emotion"]=df.apply(classify_emotion_expanded,axis=1)
 
 # 2) Emotion Mapping
