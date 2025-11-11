@@ -682,13 +682,6 @@ with left:
         bg_color=bg_rgb
     )
 
-    # 自动写主情绪名称（Top-1）
-    if len(df):
-        top1 = df["emotion"].value_counts().index.tolist()[0]
-        title_txt = f"Dominant emotion: {top1}"
-        title_color = working_palette.get(top1, (255,255,255))
-        img = add_title(img, title_txt, title_color)
-
     # 电影级后期
     arr = np.array(img).astype(np.float32)/255.0
     lin = srgb_to_linear(arr)
