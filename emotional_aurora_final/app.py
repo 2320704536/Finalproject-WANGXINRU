@@ -56,29 +56,29 @@ def fetch_news(api_key, keyword="technology", page_size=50):
         return pd.DataFrame()
 
 # =========================
-# Emotion colors (更靓丽高饱和版)
+# Emotion colors（高饱和+强区分）
 # =========================
 DEFAULT_RGB = {
-    "joy": (255,210,70),      # 金黄
-    "love": (255,120,150),    # 玫红
-    "pride": (200,120,255),   # 亮紫
-    "hope": (90,230,200),     # 薄荷青
-    "curiosity": (60,200,255),# 天青蓝
-    "calm": (70,150,255),     # 靛蓝
-    "surprise": (255,170,90), # 橙杏
-    "neutral": (190,190,195), # 中灰
-    "sadness": (80,120,220),  # 海蓝
-    "anger": (245,70,70),     # 朱红
-    "fear": (150,80,210),     # 暗紫
-    "disgust": (140,180,70),  # 橄榄绿
-    "anxiety": (255,200,60),  # 沙金
-    "boredom": (130,130,140), # 灰蓝
-    "nostalgia": (250,220,170), # 奶杏
-    "gratitude": (120,230,230), # 青绿
-    "awe": (140,245,255),     # 冰蓝
-    "trust": (70,200,170),    # 海松
-    "confusion": (255,150,180),# 粉橘
-    "mixed": (230,200,120),   # 金杏
+    "joy": (255,205,60),       # 亮金
+    "love": (255,90,140),      # 艳玫
+    "pride": (180,90,255),     # 电紫
+    "hope": (40,235,190),      # 翠青
+    "curiosity": (30,190,255), # 赛博蓝
+    "calm": (70,140,255),      # 靛蓝
+    "surprise": (255,165,70),  # 杏橙
+    "neutral": (180,180,185),  # 中灰
+    "sadness": (70,120,230),   # 海蓝
+    "anger": (255,60,60),      # 朱红
+    "fear": (150,70,200),      # 暗紫
+    "disgust": (130,200,60),   # 青绿
+    "anxiety": (255,200,50),   # 沙金
+    "boredom": (120,125,135),  # 灰蓝
+    "nostalgia": (255,215,160),# 奶杏
+    "gratitude": (50,230,230), # 湖青
+    "awe": (120,245,255),      # 冰青
+    "trust": (50,195,160),     # 青松
+    "confusion": (255,140,190),# 粉橘
+    "mixed": (230,195,110),    # 金杏
 }
 ALL_EMOTIONS = list(DEFAULT_RGB.keys())
 
@@ -164,29 +164,30 @@ def export_palette_csv(pal):
     buf.seek(0); return buf
 
 # =========================
-# Color helpers
+# Color helpers（更亮丽 & 防黑）
 # =========================
 def _rgb01(rgb):
     c = np.array(rgb, dtype=np.float32)/255.0
     return np.clip(c,0,1)
 
-def vibrancy_boost(rgb, sat_boost=1.25, min_luma=0.35):
+def vibrancy_boost(rgb, sat_boost=1.30, min_luma=0.40):
     """提高饱和度并保证最低亮度，避免黑色线条。"""
     c = _rgb01(rgb)
-    # 计算亮度
     luma = 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
     if luma < min_luma:
         c = c + (min_luma - luma)
     c = np.clip(c, 0, 1)
-    # 简易饱和增强
     lum = 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
     c = lum + (c - lum)*sat_boost
     return tuple(np.clip(c,0,1))
 
-def jitter_color(rgb01, rng, amount=0.06):
+def jitter_color(rgb01, rng, amount=0.08):
     j = (rng.random(3)-0.5)*2*amount
     c = np.clip(np.array(rgb01)+j, 0, 1)
     return tuple(c.tolist())
+
+def lerp(a, b, t):
+    return tuple((1-t)*np.array(a) + t*np.array(b))
 
 # =========================
 # Flow field & drawing
@@ -214,25 +215,27 @@ def generate_flow_field(h, w, rng, scale=180, octaves=5):
     angle = noise * 2*np.pi  # [0, 2pi)
     return angle
 
-def draw_polyline(canvas: Image.Image, pts, color01, width, alpha=220, blur_px=0):
+def draw_polyline(canvas: Image.Image, pts, width, rgba):
+    d = ImageDraw.Draw(canvas, "RGBA")
+    if len(pts) >= 2:
+        d.line(pts, fill=rgba, width=width, joint="curve")
+
+def draw_polyline_soft(canvas: Image.Image, pts, color01, width, alpha=220, blur_px=0):
     w, h = canvas.size
     layer = Image.new("RGBA", (w,h), (0,0,0,0))
-    d = ImageDraw.Draw(layer, "RGBA")
-    col = (int(color01[0]*255), int(color01[1]*255), int(color01[2]*255), int(alpha))
-    if len(pts) >= 2:
-        d.line(pts, fill=col, width=width, joint="curve")
+    draw_polyline(layer, pts, width, (int(color01[0]*255), int(color01[1]*255), int(color01[2]*255), int(alpha)))
     if blur_px > 0:
         layer = layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
     canvas.alpha_composite(layer)
 
 # =========================
-# Ribbon renderer
+# Ribbon renderer（多段渐变 + 高光）
 # =========================
 def render_ribbons(
     df, palette, width=1500, height=850, seed=12345,
     ribbons_per_emotion=14, steps=420, step_len=2.2,
     stroke_width=4, curve_noise=0.30,
-    bg_color=(245,250,255), ribbon_alpha=225, stroke_blur=0
+    bg_color=(0,0,0), ribbon_alpha=225, stroke_blur=0
 ):
     rng = np.random.default_rng(seed)
     # 背景：统一纯色
@@ -250,43 +253,61 @@ def render_ribbons(
     per_emotion = max(1, int(ribbons_per_emotion))
 
     for emo in emotions:
-        base_rgb = palette.get(emo, palette.get("mixed", (230,200,120)))
-        base01 = vibrancy_boost(base_rgb, sat_boost=1.28, min_luma=0.38)  # 更亮丽
-        for _ in range(per_emotion):
-            col01 = jitter_color(base01, rng, amount=0.05)
+        base_rgb = palette.get(emo, palette.get("mixed", (230,195,110)))
+        base01 = vibrancy_boost(base_rgb, sat_boost=1.32, min_luma=0.42)  # 更亮丽
 
-            # 随机起点
+        # 生成两端颜色用于渐变：亮/艳双端
+        vivid = jitter_color(base01, rng, amount=0.06)
+        light = lerp(base01, (1,1,1), 0.35)
+        dark  = lerp(base01, (0.0,0.0,0.0), 0.20)
+
+        for _ in range(per_emotion):
+            # 随机选择起止颜色，产生同色系渐变
+            c0 = jitter_color(vivid, rng, amount=0.05)
+            c1 = jitter_color(light if rng.random()<0.6 else dark, rng, amount=0.04)
+
+            # 起点
             x = rng.uniform(0, width-1)
             y = rng.uniform(0, height-1)
             pts = []
             ang_scale = 1.0 + curve_noise*rng.uniform(0.8, 1.2)
 
+            # 采样点（用于分段着色）
             for _s in range(steps):
-                ix = int(np.clip(x, 0, width-1))
-                iy = int(np.clip(y, 0, height-1))
+                ix = int(np.clip(x, 0, width-1)); iy = int(np.clip(y, 0, height-1))
                 a = angle[iy, ix] * ang_scale
                 x += np.cos(a) * step_len
                 y += np.sin(a) * step_len
                 if x < -10 or x > width+10 or y < -10 or y > height+10:
                     break
-                if len(pts) == 0 or (abs(pts[-1][0]-x) + abs(pts[-1][1]-y)) > 0.8:
+                if len(pts) == 0 or (abs(pts[-1][0]-x) + abs(pts[-1][1]-y)) > 0.9:
                     pts.append((float(x), float(y)))
 
-            if len(pts) >= 2:
-                draw_polyline(canvas, pts, col01, width=stroke_width, alpha=ribbon_alpha, blur_px=stroke_blur)
+            # 分段画线，颜色沿长度渐变，避免“整条同色”
+            if len(pts) >= 3:
+                segs = 10
+                n = len(pts)
+                for i in range(segs):
+                    a0 = int(i*n/segs)
+                    a1 = int((i+1)*n/segs)
+                    if a1 - a0 < 2:
+                        continue
+                    t = (i+0.5)/segs
+                    col = lerp(c0, c1, t)
+                    draw_polyline_soft(canvas, pts[a0:a1], col, width=stroke_width, alpha=ribbon_alpha, blur_px=int(stroke_blur))
 
-                # 侧边高光，提亮（白色细线）
+                # 侧边白色高光（更亮的质感）
                 edge_shift = max(1, stroke_width//6)
-                pts_up = [(p[0], p[1]-edge_shift) for p in pts]
-                pts_dn = [(p[0], p[1]+edge_shift) for p in pts]
-                draw_polyline(canvas, pts_up, (1,1,1), width=max(1, stroke_width//6), alpha=min(170, ribbon_alpha), blur_px=0)
-                draw_polyline(canvas, pts_dn, (1,1,1), width=max(1, stroke_width//7), alpha=min(150, ribbon_alpha), blur_px=0)
+                def shift(pts_, dy):
+                    return [(p[0], p[1]+dy) for p in pts_]
+                draw_polyline_soft(canvas, shift(pts, -edge_shift), (1,1,1), max(1, stroke_width//6), alpha=min(170, ribbon_alpha), blur_px=0)
+                draw_polyline_soft(canvas, shift(pts,  edge_shift), (1,1,1), max(1, stroke_width//7), alpha=min(150, ribbon_alpha), blur_px=0)
 
     bg.alpha_composite(canvas)
     return bg.convert("RGB")
 
 # =========================
-# Cinematic Color (可选)
+# Cinematic Color（可选）
 # =========================
 def srgb_to_linear(x):
     x = np.clip(x, 0, 1)
@@ -401,8 +422,7 @@ DEFAULTS = {
     "curve_noise": 0.30,
     "stroke_blur": 0.0,
     "ribbon_alpha": 225,
-    "bg_choice": "Arctic White",
-    "bg_custom": "#F5FAFF",
+    "bg_custom": "#000000",   # 默认纯黑
     "auto_bright": True,
     "target_mean": 0.50,
     "abc_strength": 0.90,
@@ -432,7 +452,7 @@ def reset_all():
     st.rerun()
 
 # =========================
-# Sidebar UI
+# Help
 # =========================
 with st.expander("How to Use", expanded=False):
     st.markdown("""
@@ -440,9 +460,12 @@ with st.expander("How to Use", expanded=False):
 1) 输入关键词（NewsAPI），获取英文新闻文本  
 2) 解析情绪（VADER→情绪映射），**默认自动选择 Top-3 情绪**  
 3) 左侧调参数：丝带数量/宽度/长度、背景纯色、电影级调色与自动亮度  
-4) 右下可下载 PNG
+4) 右侧可下载 PNG
 """)
 
+# =========================
+# Sidebar
+# =========================
 # 1) Data Source
 st.sidebar.header("1) Data Source (NewsAPI)")
 keyword = st.sidebar.text_input("Keyword", value=st.session_state.get("keyword", DEFAULTS["keyword"]), key="keyword")
@@ -469,7 +492,7 @@ if df.empty:
 
 df["text"]=df["text"].fillna("")
 sent_df=df["text"].apply(analyze_sentiment).apply(pd.Series)
-df=pd.concat([df.reset_index(drop=True),sent_df.reset_index(drop=True)],axis=1)
+df=pd.concat([df.reset_index(drop_down=True),sent_df.reset_index(drop=True)],axis=1)
 df["emotion"]=df.apply(classify_emotion_expanded,axis=1)
 
 # 2) Emotion Mapping
@@ -487,15 +510,20 @@ def _label_emotion(e: str) -> str:
     r, g, b = base_palette.get(e, (0, 0, 0))
     return f"{e} (Custom {r},{g},{b})"
 
-# 自动选择 Top-3
-auto_top3 = st.sidebar.checkbox("Auto-select Top-3 emotions after fetch", value=st.session_state.get("auto_top3", DEFAULTS["auto_top3"]), key="auto_top3")
+auto_top3 = st.sidebar.checkbox(
+    "Auto-select Top-3 emotions after fetch",
+    value=st.session_state.get("auto_top3", DEFAULTS["auto_top3"]),
+    key="auto_top3"
+)
+
 top3 = []
 if auto_top3 and len(df):
     vc = df["emotion"].value_counts()
     top3 = vc.head(3).index.tolist()
 
 options_labels = [_label_emotion(e) for e in ALL_EMOTIONS]
-default_labels = [_label_emotion(e) for e in (top3 if top3 else available_emotions)]
+default_emotions_for_ui = top3 if top3 else available_emotions
+default_labels = [_label_emotion(e) for e in default_emotions_for_ui] if default_emotions_for_ui else options_labels
 selected_labels = st.sidebar.multiselect("Selected Emotions", options_labels, default=default_labels)
 selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 
@@ -511,27 +539,15 @@ curve_noise = st.sidebar.slider("Curve Randomness", 0.00, 0.90, st.session_state
 stroke_blur = st.sidebar.slider("Stroke Softness (blur px)", 0.0, 10.0, st.session_state.get("stroke_blur", DEFAULTS["stroke_blur"]), 0.5, key="stroke_blur")
 ribbon_alpha = st.sidebar.slider("Ribbon Alpha", 60, 255, st.session_state.get("ribbon_alpha", DEFAULTS["ribbon_alpha"]), 5, key="ribbon_alpha")
 
-# 背景纯色（多选项 + 自定义）
+# 背景：只保留自定义颜色（默认纯黑）
 st.sidebar.subheader("Background (Solid Color)")
-BG_PRESETS = {
-    "Arctic White": "#F5FAFF",
-    "Ink Black": "#070A10",
-    "Sky Blue": "#CFE7FF",
-    "Lilac Mist": "#DFD6FF",
-    "Peach Glow": "#FFE1C8",
-    "Mint Fog": "#DDF6EE",
-    "Sand": "#F3E6C8",
-}
-bg_choice = st.sidebar.selectbox("Preset", list(BG_PRESETS.keys()), index=list(BG_PRESETS.keys()).index(st.session_state.get("bg_choice", DEFAULTS["bg_choice"])), key="bg_choice")
 bg_custom = st.sidebar.color_picker("Or pick custom", value=st.session_state.get("bg_custom", DEFAULTS["bg_custom"]), key="bg_custom")
-use_custom_bg = st.sidebar.checkbox("Use custom color instead of preset", value=False)
 
 def _hex_to_rgb(hex_str):
     hex_str = hex_str.lstrip("#")
     return tuple(int(hex_str[i:i+2], 16) for i in (0,2,4))
 
-bg_hex = bg_custom if use_custom_bg else BG_PRESETS[bg_choice]
-bg_rgb = _hex_to_rgb(bg_hex)
+bg_rgb = _hex_to_rgb(bg_custom)
 
 # 4) Cinematic Color System
 st.sidebar.header("4) Cinematic Color System")
@@ -568,7 +584,7 @@ abc_black = st.sidebar.slider("Black Point %", 0.00, 0.20, st.session_state.get(
 abc_white = st.sidebar.slider("White Point %", 0.80, 1.00, st.session_state.get("abc_white", DEFAULTS["abc_white"]), 0.001, key="abc_white")
 abc_max_gain = st.sidebar.slider("Max Gain", 1.0, 3.0, st.session_state.get("abc_max_gain", DEFAULTS["abc_max_gain"]), 0.05, key="abc_max_gain")
 
-# 6) Palette (可自定义/CSV)
+# 6) Palette（可自定义/CSV）
 st.sidebar.header("6) Custom Palette (RGB)")
 use_csv = st.sidebar.checkbox("Use CSV palette only", value=st.session_state.get("use_csv_palette", False), key="use_csv_palette")
 
@@ -612,12 +628,11 @@ left, right = st.columns([0.60,0.40])
 with left:
     st.subheader("🎐 Ribbon Flow")
 
-    # 渲染
     working_palette = get_active_palette()
 
     img = render_ribbons(
         df=df, palette=working_palette,
-        width=1500, height=850, seed=np.random.randint(0, 999999),
+        width=1500, height=850, seed=np.random.default_rng().integers(0, 999999),
         ribbons_per_emotion=ribbons_per_emotion, steps=steps, step_len=step_len,
         stroke_width=stroke_width, curve_noise=curve_noise,
         bg_color=bg_rgb, ribbon_alpha=ribbon_alpha, stroke_blur=int(stroke_blur)
