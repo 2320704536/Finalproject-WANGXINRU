@@ -630,8 +630,11 @@ with st.sidebar.expander("Import / Export Palette CSV",False):
 
 st.sidebar.header("7) Output")
 if st.sidebar.button("Reset All"):
-    st.session_state.clear()
-    st.rerun()
+    keys = list(st.session_state.keys())
+    for k in keys:
+        del st.session_state[k]
+    st.experimental_rerun()
+
 
 # =========================
 # DRAW SECTION
