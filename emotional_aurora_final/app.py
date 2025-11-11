@@ -352,13 +352,28 @@ def draw_polyline(canvas: Image.Image, pts, color_rgb, width, alpha=220, blur_px
         layer = layer.filter(ImageFilter.GaussianBlur(radius=float(blur_px)))
     canvas.alpha_composite(layer)
 
+import colorsys
+
 def derive_bg_from_emotion(rgb, brightness=1.15):
-    """Create a bright, soft gradient from the dominant emotion color."""
-    base = np.clip(np.array(rgb)/255.0, 0, 1)
-    # top: lighter tint; bottom: slightly deeper tone
-    top = np.clip(base*0.6 + 0.4, 0, 1) * brightness
-    bottom = np.clip(base*0.4 + 0.1, 0, 1) * (brightness*0.9)
-    return tuple(top.tolist()), tuple(bottom.tolist())
+    """Beautiful pastel gradient background from emotion color (no harsh edges)."""
+    base = np.array(rgb)/255.0
+    h, s, v = colorsys.rgb_to_hsv(base[0], base[1], base[2])
+
+    # Softer, pastel top
+    top_v = min(1.0, v * 1.25 + 0.07)
+    top_s = max(0.12, s * 0.65)      # pastel → reduce saturation
+    top = colorsys.hsv_to_rgb(h, top_s, top_v)
+
+    # Very smooth bottom (slightly deeper, but safe)
+    bot_v = max(0.12, v * 0.82)
+    bot_s = max(0.20, s * 0.78)
+    bottom = colorsys.hsv_to_rgb(h, bot_s, bot_v)
+
+    top = np.array(top) * brightness
+    bottom = np.array(bottom) * (brightness * 0.92)
+
+    return tuple(np.clip(top,0,1).tolist()), tuple(np.clip(bottom,0,1).tolist())
+
 
 def render_ribbons(df, palette,
                    width=1500, height=850, seed=12345,
