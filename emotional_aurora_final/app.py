@@ -2,21 +2,23 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
-from PIL import Image, ImageFilter, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
 from datetime import date
 
-# =========================
-# App setup
-# =========================
-st.set_page_config(page_title="Geometric Emotion Poster", page_icon="🎨", layout="wide")
-st.title("🎨 Geometric Emotion Poster — Final Edition")
 
-# =========================
-# VADER
-# =========================
+# =========================================================
+# App setup
+# =========================================================
+st.set_page_config(page_title="Emotional Shine — Final", page_icon="✨", layout="wide")
+st.title("✨ Emotional Shine — Final Edition (Constructivism Style)")
+
+
+# =========================================================
+# Load VADER
+# =========================================================
 @st.cache_resource(show_spinner=False)
 def load_vader():
     try:
@@ -27,10 +29,11 @@ def load_vader():
 
 sia = load_vader()
 
-# =========================
-# News API
-# =========================
-def fetch_news(api_key, keyword="technology", page_size=50):
+
+# =========================================================
+# Fetch News
+# =========================================================
+def fetch_news(api_key, keyword="emotion", page_size=50):
     url = "https://newsapi.org/v2/everything"
     params = {
         "q": keyword,
@@ -40,7 +43,7 @@ def fetch_news(api_key, keyword="technology", page_size=50):
         "apiKey": api_key,
     }
     try:
-        resp = requests.get(url, params=params, timeout=12)
+        resp = requests.get(url, params=params, timeout=10)
         data = resp.json()
         if data.get("status") != "ok":
             st.warning("NewsAPI error: " + str(data.get("message")))
@@ -48,65 +51,84 @@ def fetch_news(api_key, keyword="technology", page_size=50):
 
         rows = []
         for a in data.get("articles", []):
-            txt = (a.get("title") or "") + " - " + (a.get("description") or "")
+            text = (a.get("title") or "") + " - " + (a.get("description") or "")
             rows.append({
                 "timestamp": (a.get("publishedAt") or "")[:10],
-                "text": txt.strip(" -"),
+                "text": text.strip(" -"),
                 "source": (a.get("source") or {}).get("name", "")
             })
-        return pd.DataFrame(rows)
 
+        return pd.DataFrame(rows)
     except Exception as e:
         st.error(f"Error fetching NewsAPI: {e}")
         return pd.DataFrame()
 
-# =========================
-# Emotion colors
-# =========================
+
+# =========================================================
+# Emotion Colors (for Shine style)
+# =========================================================
 DEFAULT_RGB = {
-    "joy":        (255,200,60),    # 金黄
-    "love":       (255,95,150),    # 玫红
-    "pride":      (190,100,255),   # 电紫
-    "hope":       (60,235,190),    # 明亮薄荷
-    "curiosity":  (50,190,255),    # 天蓝
-    "calm":       (70,135,255),    # 靛青
-    "surprise":   (255,160,70),    # 杏橙
-    "neutral":    (190,190,200),   # 灰蓝
-    "sadness":    (80,120,230),    # 海蓝
-    "anger":      (245,60,60),     # 红
-    "fear":       (150,70,200),    # 紫
-    "disgust":    (150,200,60),    # 黄绿
-    "anxiety":    (255,200,60),    # 金色
-    "boredom":    (135,135,145),
-    "nostalgia":  (250,210,150),
-    "gratitude":  (90,230,230),
-    "awe":        (120,245,255),
-    "trust":      (60,200,160),
-    "confusion":  (255,140,180),
-    "mixed":      (230,190,110),
+    "joy": (255, 200, 70),
+    "love": (255, 110, 160),
+    "pride": (200, 110, 255),
+    "hope": (95, 255, 205),
+    "curiosity": (80, 210, 255),
+    "calm": (70, 135, 255),
+    "surprise": (255, 160, 90),
+    "neutral": (200, 200, 205),
+    "sadness": (90, 130, 230),
+    "anger": (255, 75, 75),
+    "fear": (160, 80, 225),
+    "disgust": (160, 205, 70),
+    "anxiety": (255, 215, 80),
+    "boredom": (130, 130, 150),
+    "nostalgia": (255, 225, 180),
+    "gratitude": (120, 240, 230),
+    "awe": (160, 245, 255),
+    "trust": (80, 210, 170),
+    "confusion": (255, 150, 190),
+    "mixed": (230, 200, 130),
 }
 
 ALL_EMOTIONS = list(DEFAULT_RGB.keys())
 
 COLOR_NAMES = {
-    "joy":"Jupiter Gold","love":"Rose","pride":"Violet","hope":"Mint",
-    "curiosity":"Azure","calm":"Indigo","surprise":"Peach","neutral":"Gray",
-    "sadness":"Ocean","anger":"Vermilion","fear":"Mulberry","disgust":"Olive",
-    "anxiety":"Sand","boredom":"Slate","nostalgia":"Cream","gratitude":"Cyan",
-    "awe":"Ice","trust":"Teal","confusion":"Blush","mixed":"Amber"
+    "joy": "Joy",
+    "love": "Love",
+    "pride": "Pride",
+    "hope": "Hope",
+    "curiosity": "Curiosity",
+    "calm": "Calm",
+    "surprise": "Surprise",
+    "neutral": "Neutral",
+    "sadness": "Sadness",
+    "anger": "Anger",
+    "fear": "Fear",
+    "disgust": "Disgust",
+    "anxiety": "Anxiety",
+    "boredom": "Boredom",
+    "nostalgia": "Nostalgia",
+    "gratitude": "Gratitude",
+    "awe": "Awe",
+    "trust": "Trust",
+    "confusion": "Confusion",
+    "mixed": "Mixed"
 }
 
-# =========================
-# Sentiment→Emotion
-# =========================
+
+# =========================================================
+# Sentiment → Emotion
+# =========================================================
 def analyze_sentiment(text):
     if not isinstance(text, str) or not text.strip():
-        return {"neg":0.0,"neu":1.0,"pos":0.0,"compound":0.0}
+        return {"neg": 0.0, "neu": 1.0, "pos": 0.0, "compound": 0.0}
     return sia.polarity_scores(text)
+
 
 def classify_emotion_expanded(row):
     pos, neu, neg, comp = row["pos"], row["neu"], row["neg"], row["compound"]
-    if comp >= 0.7 and pos > 0.5: return "joy"
+
+    if comp >= 0.70 and pos > 0.50: return "joy"
     if comp >= 0.55 and pos > 0.45: return "love"
     if comp >= 0.45 and pos > 0.40: return "pride"
     if 0.25 <= comp < 0.45 and pos > 0.30: return "hope"
@@ -118,255 +140,214 @@ def classify_emotion_expanded(row):
     if neg > 0.5 and neu > 0.3: return "anxiety"
     if neg > 0.45 and pos < 0.1: return "disgust"
     if neu > 0.75 and abs(comp) < 0.1: return "boredom"
-    if pos > 0.35 and neu > 0.4 and 0.0 <= comp < 0.25: return "trust"
+    if pos > 0.35 and neu > 0.4 and 0 <= comp < 0.25: return "trust"
     if pos > 0.30 and neu > 0.35 and -0.05 <= comp <= 0.05: return "nostalgia"
     if pos > 0.25 and neg > 0.25: return "mixed"
     if pos > 0.20 and neu > 0.50 and comp > 0.05: return "curiosity"
     if neu > 0.6 and 0.05 <= comp <= 0.15: return "awe"
     return "neutral"
 
-# =========================
-# Palette state
-# =========================
-def init_palette_state():
-    if "use_csv_palette" not in st.session_state:
-        st.session_state["use_csv_palette"] = False
-    if "custom_palette" not in st.session_state:
-        st.session_state["custom_palette"] = {}
 
-def get_active_palette():
-    if st.session_state.get("use_csv_palette", False):
-        return dict(st.session_state.get("custom_palette", {}))
-    merged = dict(DEFAULT_RGB)
-    merged.update(st.session_state.get("custom_palette", {}))
-    return merged
-
-def add_custom_emotion(name, r, g, b):
-    if not name: return
-    st.session_state["custom_palette"][name.strip()] = (int(r),int(g),int(b))
-
-def import_palette_csv(file):
-    try:
-        dfc = pd.read_csv(file)
-        need = {"emotion","r","g","b"}
-        cols = {c.lower():c for c in dfc.columns}
-        if not need.issubset(cols.keys()):
-            st.error("CSV must include emotion,r,g,b columns"); return
-        pal = {}
-        for _, row in dfc.iterrows():
-            emo = str(row[cols["emotion"]]).strip()
-            try:
-                r=int(row[cols["r"]]); g=int(row[cols["g"]]); b=int(row[cols["b"]])
-            except:
-                continue
-            pal[emo]=(r,g,b)
-        st.session_state["custom_palette"] = pal
-        st.success(f"Imported {len(pal)} colors from CSV.")
-    except Exception as e:
-        st.error(f"CSV import error: {e}")
-
-def export_palette_csv(pal):
-    buf = BytesIO()
-    pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()]).to_csv(buf, index=False)
-    buf.seek(0)
-    return buf
-
-# =========================
-# UI Instruction
-# =========================
-with st.expander("How to Use", expanded=False):
-    st.markdown("""
-**Generate geometric emotion posters from real news text.**
-
-✅ Enter a keyword (examples: AI, aurora, New York, Tesla)  
-✅ System auto-detects emotions and auto-selects Top-3  
-✅ Poster uses large abstract geometric shards  
-✅ Customize color grading, brightness, palette  
-✅ Download high-resolution PNG
-""")
-# =========================
-# === Geometric Burst Renderer (核心新风格) ===
-# =========================
-
-def draw_polygon(canvas, pts, color, alpha=255):
-    """在 RGBA canvas 上绘制一个硬边多边形"""
-    layer = Image.new("RGBA", canvas.size, (0,0,0,0))
-    d = ImageDraw.Draw(layer, "RGBA")
-    col = (color[0], color[1], color[2], alpha)
-    d.polygon(pts, fill=col)
-    canvas.alpha_composite(layer)
-
-
-def random_polygon(cx, cy, base_size, rng, angle_offset=0):
-    """生成随机三角形 / 四边形碎片"""
-    pts = []
-    sides = rng.integers(3, 6)  # 3~5 边
-    for i in range(sides):
-        ang = angle_offset + (i / sides) * np.pi * 2 + rng.uniform(-0.25, 0.25)
-        radius = base_size * rng.uniform(0.6, 1.4)
-        x = cx + np.cos(ang) * radius
-        y = cy + np.sin(ang) * radius
-        pts.append((x, y))
-    return pts
-
-
-def render_geometric_burst(
-    df,
-    palette,
-    width=1500,
-    height=900,
-    seed=123,
-    bg_color=(0,0,0),
-    burst_layers=28,
-    base_size=180
-):
+# =========================================================
+# Shine Engine — Geometry-based Shapes
+# =========================================================
+def draw_shine_shapes(img, df, palette, seed=12345):
+    """生成 Constructivism风格的几何叠加图 + 自动主情绪标题"""
     rng = np.random.default_rng(seed)
+    draw = ImageDraw.Draw(img, "RGBA")
 
-    # 背景
-    bg = Image.new("RGBA", (width,height), (bg_color[0], bg_color[1], bg_color[2],255))
-    canvas = Image.new("RGBA", (width,height), (0,0,0,0))
+    # Main emotion (Top-1)
+    vc = df["emotion"].value_counts()
+    main_emotion = vc.index[0] if len(vc) else "neutral"
 
-    # 使用出现频率排序的情绪
-    emos = df["emotion"].value_counts().index.tolist()
-    if not emos:
-        emos = ["hope","calm","awe"]
+    # shape colors
+    emo_rgb = palette.get(main_emotion, (255, 200, 60))
+    r, g, b = emo_rgb
 
-    # 颜色池
-    emo_colors = []
-    for emo in emos:
-        if emo in palette:
-            emo_colors.append(palette[emo])
-    if not emo_colors:
-        emo_colors = [(200,200,200)]
+    W, H = img.size
 
-    center_x = width * rng.uniform(0.40, 0.55)
-    center_y = height * rng.uniform(0.40, 0.55)
+    # ============= Geometric Layers =============
+    for i in range(14):
+        cx = rng.uniform(0.15, 0.85) * W
+        cy = rng.uniform(0.15, 0.85) * H
+        max_r = rng.uniform(0.10, 0.45) * min(W, H)
+        rr = int(max_r)
+        alpha = int(rng.uniform(30, 95))
 
-    # 大爆炸层
-    for i in range(burst_layers):
+        # random shape choice
+        shape_type = rng.choice(["circle", "triangle", "rect"])
 
-        # 每层选择一种情绪颜色
-        col = emo_colors[i % len(emo_colors)]
-        r,g,b = col
+        if shape_type == "circle":
+            draw.ellipse(
+                (cx - rr, cy - rr, cx + rr, cy + rr),
+                fill=(r, g, b, alpha)
+            )
 
-        # 亮度增强（使图和 Shine 风格一样亮丽）
-        boost = rng.uniform(1.05, 1.30)
-        r = min(int(r * boost), 255)
-        g = min(int(g * boost), 255)
-        b = min(int(b * boost), 255)
+        elif shape_type == "triangle":
+            p1 = (cx, cy - rr)
+            p2 = (cx - rr, cy + rr)
+            p3 = (cx + rr, cy + rr)
+            draw.polygon([p1, p2, p3], fill=(r, g, b, alpha))
 
-        # 每层生成若干碎片
-        num_frag = rng.integers(3, 8)
-        for _ in range(num_frag):
+        else:  # rect
+            draw.rectangle(
+                (cx - rr, cy - rr, cx + rr, cy + rr),
+                fill=(r, g, b, alpha)
+            )
 
-            # 中心偏移
-            cx = center_x + rng.uniform(-80, 80)
-            cy = center_y + rng.uniform(-80, 80)
+    # ============= Add Shine Emotion Title =============
+    title = COLOR_NAMES.get(main_emotion, main_emotion).upper()
 
-            size = base_size * rng.uniform(0.5, 2.2)
-            angle = rng.uniform(0, np.pi*2)
+    try:
+        font = ImageFont.truetype("DejaVuSerif.ttf", 72)
+    except:
+        font = ImageFont.load_default()
 
-            pts = random_polygon(cx, cy, size, rng, angle_offset=angle)
+    tx = W - 40
+    ty = H - 40
 
-            draw_polygon(canvas, pts, (r,g,b), alpha=rng.integers(190, 255))
+    tw, th = draw.textsize(title, font=font)
+    tx -= tw
+    ty -= th
 
-    # 组合输出
-    bg.alpha_composite(canvas)
-    return bg.convert("RGB")
-# =========================
-# === PART 3 — UI + Render ===
-# =========================
+    draw.text((tx, ty), title, fill=(255, 230, 120, 255), font=font)
 
-left, right = st.columns([0.60, 0.40])
-
-with left:
-    st.subheader("✨ Geometric Emotion Poster (Shine Style)")
-
-    working_palette = get_active_palette()
-
-    # ========= 核心渲染（Shine 风格） =========
-    img = render_geometric_burst(
-        df=df,
-        palette=working_palette,
-        width=1500,
-        height=900,
-        seed=np.random.randint(0, 999999),
-        bg_color=bg_rgb,
-        burst_layers=st.session_state.get("burst_layers", 28),
-        base_size=st.session_state.get("base_size", 180)
-    )
-
-    # ===============================
-    # === 电影级调色（和之前一致） ===
-    # ===============================
-    arr = np.array(img).astype(np.float32)/255.0
-    lin = srgb_to_linear(arr)
-    lin = lin * (2.0 ** exp)
-    lin = apply_white_balance(lin, temp, tint)
-    lin = highlight_rolloff(lin, roll)
-
-    arr = linear_to_srgb(np.clip(lin, 0, 4))
-    arr = np.clip(filmic_tonemap(arr * 1.25), 0, 1)
-
-    arr = adjust_contrast(arr, contrast)
-    arr = adjust_saturation(arr, saturation)
-    arr = gamma_correct(arr, gamma_val)
-    arr = split_tone(
-        arr,
-        (sh_r, sh_g, sh_b),
-        (hi_r, hi_g, hi_b),
-        tone_balance
-    )
-
-    # 自动亮度
-    if auto_bright:
-        arr = auto_brightness_compensation(
-            arr,
-            target_mean=target_mean,
-            strength=abc_strength,
-            black_point_pct=abc_black,
-            white_point_pct=abc_white,
-            max_gain=abc_max_gain
-        )
-
-    # Bloom / Vignette
-    arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
-    arr = apply_vignette(arr, strength=vignette_strength)
-
-    # 保证色彩饱和（不会发灰）
-    arr = ensure_colorfulness(arr, min_sat=0.12, boost=1.20)
-
-    # 输出最终图
-    final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8))
-    buf = BytesIO()
-    final_img.save(buf, format="PNG")
-    buf.seek(0)
-
-    st.image(buf, use_column_width=True)
-    st.download_button(
-        "💾 Download PNG",
-        data=buf,
-        file_name="geometric_emotion_poster.png",
-        mime="image/png"
-    )
+    return img
+# =========================================================
+# Filmic + Color Processing
+# =========================================================
+def srgb_to_linear(x):
+    x = np.clip(x, 0, 1)
+    return np.where(x <= 0.04045, x/12.92, ((x+0.055)/1.055)**2.4)
 
 
-# =========================
-# === 右侧 Data Table ===
-# =========================
+def linear_to_srgb(x):
+    x = np.clip(x, 0, 1)
+    return np.where(x < 0.0031308, x*12.92, 1.055*(x**(1/2.4)) - 0.055)
 
-with right:
-    st.subheader("📊 Data & Emotion Classification")
 
-    df2 = df.copy()
-    df2["emotion_display"] = df2["emotion"].apply(
-        lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
-    )
-    cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
-    if "timestamp" in df: cols.insert(1,"timestamp")
-    if "source" in df: cols.insert(2,"source")
+def filmic_tonemap(x):
+    A = 0.22; B = 0.30; C = 0.10; D = 0.20; E = 0.01; F = 0.30
+    return ((x*(A*x + C*B) + D*E) / (x*(A*x + B) + D*F)) - E/F
 
-    st.dataframe(df2[cols], use_container_width=True, height=680)
+
+def adjust_contrast(img, c):
+    return np.clip((img - 0.5)*c + 0.5, 0, 1)
+
+
+def adjust_saturation(img, s):
+    lum = 0.2126*img[:,:,0] + 0.7152*img[:,:,1] + 0.0722*img[:,:,2]
+    lum = lum[...,None]
+    return np.clip(lum + (img - lum)*s, 0, 1)
+
+
+def gamma_correct(img, g):
+    return np.clip(img ** (1.0/g), 0, 1)
+
+
+def apply_vignette(img, strength=0.25):
+    h, w, _ = img.shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    xx = (xx - w/2)/(w/2)
+    yy = (yy - h/2)/(h/2)
+    r = np.sqrt(xx*xx + yy*yy)
+    mask = np.clip(1 - strength*(r**1.5), 0, 1)
+    return img * mask[...,None]
+
+
+# =========================================================
+# Sidebar controls
+# =========================================================
+st.sidebar.header("Settings")
+
+contrast = st.sidebar.slider("Contrast", 0.5, 2.0, 1.2, 0.01)
+saturation = st.sidebar.slider("Saturation", 0.5, 2.0, 1.3, 0.01)
+gamma_val = st.sidebar.slider("Gamma", 0.6, 1.4, 1.0, 0.01)
+vig = st.sidebar.slider("Vignette", 0.0, 0.8, 0.20, 0.01)
+
+bg_color = st.sidebar.color_picker("Background Color", "#000000")
+def _hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0,2,4))
+bg_rgb = _hex_to_rgb(bg_color)
+
+
+# =========================================================
+# Data Processing
+# =========================================================
+st.sidebar.header("News Input")
+
+keyword = st.sidebar.text_input("Keyword", "aurora")
+fetch_btn = st.sidebar.button("Fetch News")
+
+df = pd.DataFrame()
+if fetch_btn:
+    key = st.secrets.get("NEWS_API_KEY", "")
+    if not key:
+        st.sidebar.error("Missing NEWS_API_KEY in Secrets")
+    else:
+        df = fetch_news(key, keyword)
+
+# fallback sample
+if df.empty:
+    df = pd.DataFrame({
+        "text":[
+            "A breathtaking aurora illuminated the sky last night.",
+            "Hope rises as researchers make progress.",
+            "Fear spreads due to unexpected events.",
+            "Moments of awe captured by photographers.",
+        ],
+        "timestamp":[str(date.today())]*4
+    })
+
+df["text"] = df["text"].fillna("")
+sent_df = df["text"].apply(analyze_sentiment).apply(pd.Series)
+df = pd.concat([df.reset_index(drop=True), sent_df.reset_index(drop=True)], axis=1)
+df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
+
+
+# =========================================================
+# Generate image
+# =========================================================
+st.subheader("✨ Shine Canvas Preview")
+
+# Create base image (dark)
+W, H = 1500, 850
+img = Image.new("RGBA", (W, H), (bg_rgb[0], bg_rgb[1], bg_rgb[2], 255))
+
+# Shine shapes + Title
+img = draw_shine_shapes(img, df, DEFAULT_RGB, seed=np.random.randint(0, 999999))
+
+# Convert to array
+arr = np.array(img).astype(np.float32) / 255.0
+
+# Filmic process
+arr = adjust_contrast(arr, contrast)
+arr = adjust_saturation(arr, saturation)
+arr = gamma_correct(arr, gamma_val)
+arr = apply_vignette(arr, vig)
+
+final_img = Image.fromarray((np.clip(arr, 0, 1)*255).astype(np.uint8))
+
+# display
+buf = BytesIO()
+final_img.save(buf, format="PNG")
+buf.seek(0)
+
+st.image(final_img, use_column_width=True)
+st.download_button("💾 Download PNG", data=buf, file_name="shine_canvas.png", mime="image/png")
+
+
+# =========================================================
+# Table
+# =========================================================
+st.subheader("📊 Extracted Data")
+
+cols = ["text", "emotion", "compound", "pos", "neu", "neg"]
+if "timestamp" in df.columns:
+    cols.insert(1, "timestamp")
+
+st.dataframe(df[cols], use_container_width=True)
 
 st.markdown("---")
-st.caption("© 2025 Geometric Emotion Poster — Shine Edition")
+st.caption("© 2025 Emotional Shine — Constructivism Edition")
