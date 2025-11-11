@@ -154,21 +154,25 @@ def add_title(image, text, top_color):
     draw = ImageDraw.Draw(image, "RGBA")
     r,g,b = top_color
 
-    # white or black text?
+    # Choose white/black text automatically
     bright = (r*0.299 + g*0.587 + b*0.114) > 140
     txt_color = (0,0,0) if bright else (255,255,255)
 
-    # Draw centered
     ts = 70
     try:
         font = ImageFont.truetype("arial.ttf", ts)
     except:
         font = ImageFont.load_default()
 
-    tw, th = draw.textsize(text, font=font)
-    draw.text(((W-tw)/2, H*0.42), text, fill=txt_color, font=font)
+    # ✅ FIX: textbbox instead of textsize
+    bbox = draw.textbbox((0,0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+
+    draw.text(((W - tw)/2, H*0.42), text, fill=txt_color, font=font)
 
     return image
+
 
 
 def render_shine(df, bg_rgb):
