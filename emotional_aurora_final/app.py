@@ -273,3 +273,101 @@ def render_geometric_burst(
     # 组合输出
     bg.alpha_composite(canvas)
     return bg.convert("RGB")
+    # =========================
+# === PART 3 — UI + Render ===
+# =========================
+
+left, right = st.columns([0.60, 0.40])
+
+with left:
+    st.subheader("✨ Geometric Emotion Poster (Shine Style)")
+
+    working_palette = get_active_palette()
+
+    # ========= 核心渲染（Shine 风格） =========
+    img = render_geometric_burst(
+        df=df,
+        palette=working_palette,
+        width=1500,
+        height=900,
+        seed=np.random.randint(0, 999999),
+        bg_color=bg_rgb,
+        burst_layers=st.session_state.get("burst_layers", 28),
+        base_size=st.session_state.get("base_size", 180)
+    )
+
+    # ===============================
+    # === 电影级调色（和之前一致） ===
+    # ===============================
+    arr = np.array(img).astype(np.float32)/255.0
+    lin = srgb_to_linear(arr)
+    lin = lin * (2.0 ** exp)
+    lin = apply_white_balance(lin, temp, tint)
+    lin = highlight_rolloff(lin, roll)
+
+    arr = linear_to_srgb(np.clip(lin, 0, 4))
+    arr = np.clip(filmic_tonemap(arr * 1.25), 0, 1)
+
+    arr = adjust_contrast(arr, contrast)
+    arr = adjust_saturation(arr, saturation)
+    arr = gamma_correct(arr, gamma_val)
+    arr = split_tone(
+        arr,
+        (sh_r, sh_g, sh_b),
+        (hi_r, hi_g, hi_b),
+        tone_balance
+    )
+
+    # 自动亮度
+    if auto_bright:
+        arr = auto_brightness_compensation(
+            arr,
+            target_mean=target_mean,
+            strength=abc_strength,
+            black_point_pct=abc_black,
+            white_point_pct=abc_white,
+            max_gain=abc_max_gain
+        )
+
+    # Bloom / Vignette
+    arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
+    arr = apply_vignette(arr, strength=vignette_strength)
+
+    # 保证色彩饱和（不会发灰）
+    arr = ensure_colorfulness(arr, min_sat=0.12, boost=1.20)
+
+    # 输出最终图
+    final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8))
+    buf = BytesIO()
+    final_img.save(buf, format="PNG")
+    buf.seek(0)
+
+    st.image(buf, use_column_width=True)
+    st.download_button(
+        "💾 Download PNG",
+        data=buf,
+        file_name="geometric_emotion_poster.png",
+        mime="image/png"
+    )
+
+
+# =========================
+# === 右侧 Data Table ===
+# =========================
+
+with right:
+    st.subheader("📊 Data & Emotion Classification")
+
+    df2 = df.copy()
+    df2["emotion_display"] = df2["emotion"].apply(
+        lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
+    )
+    cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
+    if "timestamp" in df: cols.insert(1,"timestamp")
+    if "source" in df: cols.insert(2,"source")
+
+    st.dataframe(df2[cols], use_container_width=True, height=680)
+
+st.markdown("---")
+st.caption("© 2025 Geometric Emotion Poster — Shine Edition")
+
