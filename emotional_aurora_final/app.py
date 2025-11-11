@@ -240,42 +240,70 @@ def draw_polyline(canvas: Image.Image, pts, color255, width, alpha=220, blur_px=
         layer = layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
     canvas.alpha_composite(layer)
 
-# ---- 3) Ribbon Engine — Flow
-st.sidebar.header("3) Ribbon Engine — Flow")
+# =========================
+# Ribbon Renderer (solid background)
+# =========================
+def render_ribbons(df, palette,
+                   width=1500, height=850, seed=12345,
+                   ribbons_per_emotion=14, steps=420, step_len=2.2,
+                   stroke_width=4, curve_noise=0.30,
+                   background_rgb=(240, 246, 252),
+                   ribbon_alpha=225, stroke_blur=0):
 
-ribbons_per_emotion = st.sidebar.slider("Ribbons per Emotion", 2, 40, 16, 1)
-stroke_width = st.sidebar.slider("Stroke Width", 1, 16, 5, 1)
-steps = st.sidebar.slider("Ribbon Length (steps)", 120, 1200, 480, 10)
-step_len = st.sidebar.slider("Step Length (px)", 0.5, 8.0, 2.4, 0.1)
-curve_noise = st.sidebar.slider("Curve Randomness", 0.00, 0.90, 0.32, 0.01)
-stroke_blur = st.sidebar.slider("Stroke Softness (blur px)", 0.0, 10.0, 0.0, 0.5)
-ribbon_alpha = st.sidebar.slider("Ribbon Alpha", 60, 255, 230, 5)
+    rng = np.random.default_rng(seed)
 
-# ✅ Background (ONLY two options now)
-st.sidebar.subheader("Background (Solid Color)")
+    # Background (solid color)
+    base = Image.new("RGBA", (width, height), tuple(list(background_rgb)+[255]))
+    canvas = Image.new("RGBA", (width, height), (0,0,0,0))
 
-bg_mode = st.sidebar.radio("Background Mode", ["Use custom color", "Use Top Emotion color"], index=0)
+    # Flow
+    angle = generate_flow_field(height, width, rng, scale=160, octaves=5)
 
-if bg_mode == "Use custom color":
-    # default soft white
-    custom_hex = st.sidebar.color_picker("Pick background color", "#F5F8FC")
-    ch = custom_hex.lstrip("#")
-    bg_rgb = [int(ch[i:i+2],16) for i in (0,2,4)]
+    # Emotion list
+    emotions = df["emotion"].value_counts().index.tolist()
+    if not emotions:
+        emotions = ["calm","awe","trust"]
 
-else:
-    # Use top emotion color
-    if len(df):
-        top_emo = df["emotion"].value_counts().index.tolist()[0]
-    else:
-        top_emo = "calm"
+    per_emotion = max(1, int(ribbons_per_emotion))
 
-    top_col = get_active_palette().get(top_emo, DEFAULT_RGB["calm"])
+    for emo in emotions:
+        base_rgb = palette.get(emo, palette.get("mixed", (235,205,90)))
+        variants = make_variants_vibrant(base_rgb)
 
-    # slightly brighten + lower saturation
-    r,g,b = [c/255.0 for c in top_col]
-    r,g,b = sat_val_boost((r,g,b), sat_mul=0.85, val_mul=1.25, min_v=0.5)
-    bg_rgb = float_to_rgb255((r,g,b))
+        for i in range(per_emotion):
+            # pick a vibrant variant
+            color255 = variants[rng.integers(0, len(variants))]
 
+            # random start
+            x = rng.uniform(0, width-1)
+            y = rng.uniform(0, height-1)
+            pts = []
+            ang_scale = 1.0 + curve_noise*rng.uniform(0.8, 1.2)
+
+            for _ in range(steps):
+                ix = int(np.clip(x, 0, width-1))
+                iy = int(np.clip(y, 0, height-1))
+                a = angle[iy, ix] * ang_scale
+                x += np.cos(a) * step_len
+                y += np.sin(a) * step_len
+                if x < -10 or x > width+10 or y < -10 or y > height+10:
+                    break
+                if len(pts) == 0 or (abs(pts[-1][0]-x) + abs(pts[-1][1]-y)) > 0.8:
+                    pts.append((float(x), float(y)))
+
+            if len(pts) >= 2:
+                # 主线
+                draw_polyline(canvas, pts, color255, width=stroke_width, alpha=ribbon_alpha, blur_px=stroke_blur)
+                # 两侧微高光（使用浅亮变体，增强层次）
+                hl = make_variants_vibrant(base_rgb)[0]
+                offset = max(1, stroke_width//6)
+                pts_up = [(p[0], p[1]-offset) for p in pts]
+                pts_dn = [(p[0], p[1]+offset) for p in pts]
+                draw_polyline(canvas, pts_up, hl, width=max(1, stroke_width//3), alpha=min(200, ribbon_alpha), blur_px=0)
+                draw_polyline(canvas, pts_dn, hl, width=max(1, int(stroke_width*0.28)), alpha=min(180, ribbon_alpha), blur_px=0)
+
+    base.alpha_composite(canvas)
+    return base.convert("RGB")
 
 # =========================
 # Cinematic color system
