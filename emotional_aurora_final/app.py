@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
-from PIL import Image, ImageFilter, ImageDraw
+from PIL import Image, ImageFilter
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
@@ -11,35 +11,27 @@ from datetime import date
 # =========================
 # App setup
 # =========================
-st.set_page_config(page_title="Emotional Ribbon — Wang Xinru — Final Project", page_icon="🎐", layout="wide")
-st.title("🎐 Emotional Ribbon — Wang Xinru — Final Project")
+st.set_page_config(page_title="Emotional Ribbon Flow — Wang Xinru — Final Project", page_icon="🌊", layout="wide")
+st.title("🌊 Emotional Ribbon Flow — Wang Xinru — Final Project")
 
-# ✅ Instructions section
+# =========================
+# Instructions
+# =========================
 with st.expander("Instructions", expanded=False):
-    st.markdown("""
-### How to Use This Project
+    st.markdown(
+        """
+**How to Use**
 
-This project turns live news emotions into **Ribbon Flow** graphics (silky, print-like streamlines), then applies a **cinematic color grading** pipeline with **Auto Brightness Compensation** so images stay bright and punchy.
+This project turns live news emotions into flowing ribbon visuals, then applies a cinematic color system with Auto Brightness Compensation so images are always bright and vivid.
 
-**1) Fetch Data – NewsAPI only.**  
-Enter a keyword and fetch English headlines. Sentiment is analyzed (VADER) and mapped to curated emotions.
-
-**2) Emotion Mapping.**  
-Filter by emotions and VADER compound range.
-
-**3) Ribbon Engine.**  
-Ribbons follow a smooth flow field; tune bands per emotion, stroke width, curve detail, length, and background theme.
-
-**4) Cinematic Color System + Auto Brightness.**  
-Exposure / Contrast / Gamma / Saturation, White Balance (Temperature/Tint), Split Toning, Bloom & Vignette, and Auto Brightness Compensation.
-
-**5) Palette.**  
-Each emotion has a fixed base color; you can add custom RGB and import/export a CSV.
-
-**6) Download.**  
-Save PNG.
----
-""")
+1) Data → NewsAPI only. Enter a keyword and fetch.
+2) Emotion Mapping → VADER to curated emotions; filter by compound range and by emotion list.
+3) Ribbon Flow Engine → control bands per emotion, curve smoothness, ribbon width, blur, and flow randomness.
+4) Cinematic Color System → exposure/contrast/gamma/saturation, white balance, split-toning, bloom, vignette, Auto Brightness.
+5) Palette → one fixed color per emotion; add custom RGB; CSV import/export.
+6) Download → save PNG.
+"""
+    )
 
 # =========================
 # Load VADER Sentiment
@@ -86,7 +78,7 @@ def fetch_news(api_key, keyword="technology", page_size=50):
         return pd.DataFrame()
 
 # =========================
-# Default planet-like emotion colors
+# Default planet-like emotion colors (base hues only; grading will add richness)
 # =========================
 DEFAULT_RGB = {
     "joy": (230,200,110),"love":(235,180,175),"pride":(200,170,210),"hope":(160,220,200),
@@ -103,15 +95,6 @@ COLOR_NAMES = {
     "sadness": "Deep Ocean Blue","anger": "Mars Red","fear": "Shadow Purple","disgust": "Olive Gray",
     "anxiety": "Desert Sand","boredom": "Slate Gray","nostalgia": "Pale Cream","gratitude": "Soft Cyan",
     "awe": "Ice Blue","trust": "Sea Teal","confusion": "Dust Pink","mixed": "Pale Gold",
-}
-
-# Background gradient themes (for print-like blue/white, keep dark-to-deep-blue)
-THEMES = {
-    "Deep Night": ((0.02, 0.03, 0.08), (0.00, 0.00, 0.00)),
-    "Polar Twilight": ((0.06, 0.08, 0.16), (0.00, 0.00, 0.00)),
-    "Dawn Haze": ((0.10, 0.08, 0.12), (0.00, 0.00, 0.00)),
-    # Extra brighter base for blue-white print look:
-    "Glacier Blue": ((0.12, 0.18, 0.30), (0.02, 0.04, 0.08)),
 }
 
 # =========================
@@ -188,43 +171,7 @@ def export_palette_csv(pal):
     buf.seek(0); return buf
 
 # =========================
-# Gradient Background
-# =========================
-def vertical_gradient(width, height, top_rgb, bottom_rgb, brightness=1.0):
-    t = np.array(top_rgb)*brightness
-    b = np.array(bottom_rgb)*brightness
-    grad = np.linspace(0,1,height).reshape(height,1,1)
-    img = t.reshape(1,1,3)*(1-grad) + b.reshape(1,1,3)*grad
-    img = (img*255).astype(np.uint8)
-    img = np.tile(img,(1,width,1))
-    img = np.ascontiguousarray(img)
-    return Image.fromarray(img)
-
-# =========================
-# fBm Noise (for flow field)
-# =========================
-def fbm_noise(h, w, rng, octaves=5, base_scale=96, persistence=0.55, lacunarity=2.0):
-    acc = np.zeros((h,w), dtype=np.float32)
-    amp = 1.0
-    scale = base_scale
-    for _ in range(octaves):
-        gh = max(1, h//max(1,scale))
-        gw = max(1, w//max(1,scale))
-        g = rng.random((gh,gw)).astype(np.float32)
-        layer = np.array(
-            Image.fromarray((g*255).astype(np.uint8)).resize((w,h), Image.BICUBIC),
-            dtype=np.float32
-        )/255.
-        acc += layer*amp
-        amp *= persistence
-        scale = max(1, int(scale/lacunarity))
-    acc -= acc.min()
-    if acc.max()>1e-6:
-        acc /= acc.max()
-    return acc
-
-# =========================
-# Cinematic Color Utilities
+# Color math utilities
 # =========================
 def srgb_to_linear(x):
     x = np.clip(x, 0, 1)
@@ -293,7 +240,7 @@ def apply_vignette(img, strength=0.25):
     mask = np.clip(1 - strength*(r**1.5), 0.0, 1.0)
     return np.clip(img * mask[...,None], 0, 1)
 
-def ensure_colorfulness(img, min_sat=0.15, boost=1.25):
+def ensure_colorfulness(img, min_sat=0.18, boost=1.25):
     r,g,b = img[:,:,0], img[:,:,1], img[:,:,2]
     mx = np.maximum(np.maximum(r,g), b)
     mn = np.minimum(np.minimum(r,g), b)
@@ -303,16 +250,16 @@ def ensure_colorfulness(img, min_sat=0.15, boost=1.25):
     return img
 
 # =========================
-# Cinematic Palettes
+# Cinematic Palettes (global multipliers)
 # =========================
 CINEMATIC_PRESETS = {
     "Planetary (Soft)": {"mult": (1.00, 1.00, 1.00), "sat": 1.00, "temp": 0.00, "tint": 0.00},
     "Cinematic Cool":  {"mult": (0.95, 1.02, 1.08), "sat": 1.05, "temp": -0.20, "tint": 0.02},
     "Cinematic Warm":  {"mult": (1.08, 1.02, 0.95), "sat": 1.05, "temp": 0.20,  "tint": -0.02},
-    "Neon Arctic":     {"mult": (0.90, 1.05, 1.15), "sat": 1.20, "temp": -0.30, "tint": 0.05},
-    "Sunset Storm":    {"mult": (1.15, 1.03, 0.92), "sat": 1.18, "temp": 0.25,  "tint": 0.06},
+    "Neon Arctic":     {"mult": (0.90, 1.05, 1.15), "sat": 1.22, "temp": -0.30, "tint": 0.05},
+    "Sunset Storm":    {"mult": (1.15, 1.03, 0.92), "sat": 1.20, "temp": 0.25,  "tint": 0.06},
     "Pastel Dream":    {"mult": (1.03, 1.03, 1.03), "sat": 0.92, "temp": 0.05,  "tint": 0.05},
-    "Deep Space":      {"mult": (0.95, 0.98, 1.05), "sat": 0.95, "temp": -0.10, "tint": 0.00},
+    "Deep Space":      {"mult": (0.95, 0.98, 1.05), "sat": 0.96, "temp": -0.10, "tint": 0.00},
 }
 
 def apply_palette_preset(base_palette: dict, preset_name: str):
@@ -327,122 +274,25 @@ def apply_palette_preset(base_palette: dict, preset_name: str):
         out[k] = tuple((col*255).astype(int).tolist())
     return out, p["temp"], p["tint"]
 
-def jitter_emotion_color(rgb, seed_key, amount=0.035):
-    rng = np.random.default_rng(abs(hash((seed_key, "ribbon")))% (2**32))
+def jitter_emotion_color(rgb, emo_key, amount=0.08):
+    rng = np.random.default_rng(abs(hash(emo_key)) % (2**32))
     jitter = (rng.random(3)-0.5)*2*amount
     col = np.clip(np.array(rgb)/255.0 + jitter, 0, 1)
     return tuple((col*255).astype(int).tolist())
 
 # =========================
-# Ribbon Flow Renderer
-# =========================
-def generate_flow_field(h, w, rng, scale=180, octaves=5):
-    # smooth angle field from fbm noise
-    noise = fbm_noise(h, w, rng, octaves=octaves, base_scale=scale, persistence=0.6, lacunarity=2.0)
-    angle = noise * 2*np.pi  # [0, 2pi)
-    return angle
-
-def ribbon_color_variants(base_rgb):
-    """Two-tone variants around base color for print-like look."""
-    base = np.array(base_rgb)/255.0
-    light = np.clip(base * 0.5 + 0.5, 0, 1)      # toward white
-    dark  = np.clip(base * 0.7, 0, 1)            # toward black
-    return (tuple(light.tolist()), tuple(dark.tolist()))
-
-def draw_polyline(canvas: Image.Image, pts, color, width, alpha=220, blur_px=0):
-    """Draw AA polyline to a separate layer then composite."""
-    w, h = canvas.size
-    layer = Image.new("RGBA", (w,h), (0,0,0,0))
-    d = ImageDraw.Draw(layer, "RGBA")
-    col = tuple([int(color[0]*255), int(color[1]*255), int(color[2]*255), int(alpha)])
-    if len(pts) >= 2:
-        d.line(pts, fill=col, width=width, joint="curve")
-    if blur_px > 0:
-        layer = layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
-    canvas.alpha_composite(layer)
-
-def render_ribbons(df, palette, theme_name,
-                   width=1500, height=850, seed=12345,
-                   ribbons_per_emotion=12, steps=380, step_len=2.0,
-                   stroke_width=3, curve_noise=0.35, bg_brightness=1.05,
-                   ribbon_alpha=220, stroke_blur=0):
-    rng = np.random.default_rng(seed)
-
-    # Background
-    top, bottom = THEMES[theme_name]
-    bg = vertical_gradient(width, height, top, bottom, brightness=bg_brightness).convert("RGBA")
-    canvas = Image.new("RGBA", (width, height), (0,0,0,0))
-    base = Image.new("RGBA", (width, height))
-    base.paste(bg)
-
-    # Flow field
-    angle = generate_flow_field(height, width, rng, scale=160, octaves=5)
-
-    # Emotion list -> ensure at least some ribbons
-    emotions = df["emotion"].value_counts().index.tolist()
-    if not emotions:
-        emotions = ["calm","awe","trust"]
-
-    # Normalize ribbons count across emotions
-    total_emotions = len(emotions)
-    per_emotion = max(1, int(ribbons_per_emotion))
-
-    for emo in emotions:
-        raw = palette.get(emo, palette.get("mixed", (210,190,140)))
-        raw = jitter_emotion_color(raw, emo, amount=0.03)
-        light, dark = ribbon_color_variants(raw)
-
-        # Bias to blue-white look if base is cool-colored (for your sample style)
-        # Convert to H-like: if B is dominant, push more light strokes
-        rgb = np.array(raw)/255.0
-        blue_bias = float(rgb[2] > rgb[0] and rgb[2] > rgb[1])
-        light_ratio = 0.65 if blue_bias else 0.50
-
-        for i in range(per_emotion):
-            # choose color variant
-            use_light = (rng.random() < light_ratio)
-            col = light if use_light else dark
-            # slight per-stroke shift to add richness
-            jitter = (rng.random(3)-0.5)*0.06
-            ccol = np.clip(np.array(col)+jitter, 0, 1)
-
-            # random start
-            x = rng.uniform(0, width-1)
-            y = rng.uniform(0, height-1)
-            pts = []
-            ang_scale = 1.0 + curve_noise*rng.uniform(0.8, 1.2)
-
-            for _ in range(steps):
-                ix = int(np.clip(x, 0, width-1))
-                iy = int(np.clip(y, 0, height-1))
-                a = angle[iy, ix] * ang_scale
-                # step along field
-                x += np.cos(a) * step_len
-                y += np.sin(a) * step_len
-                if x < -10 or x > width+10 or y < -10 or y > height+10:
-                    break
-                if len(pts) == 0 or (abs(pts[-1][0]-x) + abs(pts[-1][1]-y)) > 0.8:
-                    pts.append((float(x), float(y)))
-
-            if len(pts) >= 2:
-                draw_polyline(canvas, pts, ccol, width=stroke_width, alpha=ribbon_alpha, blur_px=stroke_blur)
-
-    # Composite on background
-    base.alpha_composite(canvas)
-    return base.convert("RGB")
-
-# =========================
 # Auto Brightness Compensation
 # =========================
-def auto_brightness_compensation(img_arr, target_mean=0.46, strength=0.9,
-                                 black_point_pct=0.05, white_point_pct=0.997,
-                                 max_gain=2.6):
+def auto_brightness_compensation(img_arr, target_mean=0.46, strength=0.85,
+                                 black_point_pct=0.06, white_point_pct=0.995,
+                                 max_gain=2.4):
     arr = np.clip(img_arr, 0, 1).astype(np.float32)
     lin = srgb_to_linear(arr)
     Y = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
     bp = np.quantile(Y, black_point_pct)
     wp = np.quantile(Y, white_point_pct)
-    if wp <= bp + 1e-6: wp = bp + 1e-3
+    if wp <= bp + 1e-6:
+        wp = bp + 1e-3
     Y_remap = np.clip((Y - bp) / (wp - bp), 0, 1)
     remap_gain = np.clip(strength, 0, 1)
     Y_final = (1-remap_gain)*Y + remap_gain*Y_remap
@@ -450,22 +300,131 @@ def auto_brightness_compensation(img_arr, target_mean=0.46, strength=0.9,
     gain = np.clip(target_mean / meanY, 1.0/max_gain, max_gain)
     lin *= gain
     Y2 = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
-    blend = 0.65*remap_gain
+    blend = 0.6*remap_gain
     Y_mix = (1-blend)*Y2 + blend*np.clip(Y_final*gain, 0, 2.5)
     ratio = (Y_mix + 1e-6) / (Y2 + 1e-6)
-    lin = np.clip(lin * ratio[...,None], 0, 4)
-    out = filmic_tonemap(np.clip(lin,0,4))
+    lin = np.clip(lin * ratio[...,None], 0, 6)
+    out = filmic_tonemap(np.clip(lin,0,6))
     out = np.clip(out, 0, 1)
     out = linear_to_srgb(out)
     return np.clip(out, 0, 1)
 
 # =========================
-# UI
+# Ribbon Flow Engine
+# =========================
+def mix_colors(colors):
+    if not colors:
+        return np.array([0.1,0.12,0.18])
+    cols = np.array(colors)/255.0
+    return np.clip(cols.mean(axis=0), 0, 1)
+
+def make_bg_from_emotions(width, height, selected_emotions, palette, darkness=0.35, lightness=0.85):
+    if not selected_emotions:
+        base = np.array([0.08,0.09,0.12])
+    else:
+        base = mix_colors([palette.get(e, (180,180,185)) for e in selected_emotions])
+    top = np.clip(base*darkness, 0, 1)
+    bottom = np.clip(1 - (1-base)* (1-lightness), 0, 1)
+    grad = np.linspace(0,1,height).reshape(height,1,1)
+    img = top.reshape(1,1,3)*(1-grad) + bottom.reshape(1,1,3)*grad
+    img = (img*255).astype(np.uint8)
+    img = np.tile(img,(1,width,1))
+    img = np.ascontiguousarray(img)
+    return np.array(Image.fromarray(img), dtype=np.float32)/255.0
+
+def bezier_points(p0, p1, p2, p3, t):
+    return (1-t)**3*p0 + 3*(1-t)**2*t*p1 + 3*(1-t)*t**2*p2 + t**3*p3
+
+def draw_gaussian_disc(canvas, cx, cy, radius, color, alpha):
+    h, w, _ = canvas.shape
+    r = int(max(1, radius))
+    x0, x1 = max(0, int(cx - r)), min(w-1, int(cx + r))
+    y0, y1 = max(0, int(cy - r)), min(h-1, int(cy + r))
+    if x1 <= x0 or y1 <= y0: return
+    yy, xx = np.mgrid[y0:y1+1, x0:x1+1]
+    dist2 = (xx - cx)**2 + (yy - cy)**2
+    sigma2 = (radius*0.6)**2 + 1e-6
+    a = np.exp(-dist2/(2*sigma2))*alpha
+    col = np.array(color).reshape(1,1,3)
+    sub = canvas[y0:y1+1, x0:x1+1, :]
+    sub[:] = sub*(1 - a[...,None]) + col*a[...,None]
+
+def draw_ribbon(canvas, rng, color_rgb, width_px, smoothness, flow_variance, alpha, bands_noise=0.15):
+    h, w, _ = canvas.shape
+    # random endpoints along left/right or top/bottom, then bezier in between
+    if rng.random() < 0.5:
+        x0, y0 = -0.1*w, rng.uniform(0.15*h, 0.85*h)
+        x3, y3 = 1.1*w, rng.uniform(0.15*h, 0.85*h)
+    else:
+        x0, y0 = rng.uniform(0.1*w, 0.9*w), -0.1*h
+        x3, y3 = rng.uniform(0.1*w, 0.9*w), 1.1*h
+
+    # control points
+    dx = (x3 - x0)
+    dy = (y3 - y0)
+    curve_amp = smoothness * 0.35
+    x1 = x0 + dx*0.33 + rng.normal(0, abs(dx)*0.2)*curve_amp
+    y1 = y0 + dy*0.33 + rng.normal(0, abs(dy)*0.2)*curve_amp
+    x2 = x0 + dx*0.66 + rng.normal(0, abs(dx)*0.2)*curve_amp
+    y2 = y0 + dy*0.66 + rng.normal(0, abs(dy)*0.2)*curve_amp
+
+    p0 = np.array([x0,y0]); p1 = np.array([x1,y1]); p2 = np.array([x2,y2]); p3 = np.array([x3,y3])
+
+    steps = int(1200 * (0.7 + 0.6*smoothness))
+    t = np.linspace(0, 1, steps)
+    pts = bezier_points(p0, p1, p2, p3, t)
+
+    # width modulation and micro meander
+    base_w = width_px
+    for i in range(steps):
+        px, py = pts[i]
+        jitter = rng.normal(0, 1.0) * flow_variance
+        px += jitter
+        py += jitter*0.5
+        rad = base_w * (0.75 + 0.25*np.sin(i*0.05 + rng.random()*2*np.pi))
+        local_alpha = alpha * (0.7 + 0.3*np.cos(i*0.03))
+        # gentle noise color richness
+        noise_col = (np.array(color_rgb)/255.0) * (0.9 + 0.2*np.sin(i*0.02 + rng.random()))
+        noise_col = np.clip(noise_col, 0, 1)
+        draw_gaussian_disc(canvas, px, py, rad, noise_col, local_alpha)
+
+def render_ribbon_flow(df, palette, width, height, seed,
+                       bands_per_emotion=3, ribbon_width=18.0, smoothness=0.85,
+                       flow_variance=1.8, blur_px=2.0, alpha=0.18):
+    rng = np.random.default_rng(seed)
+
+    # choose active emotions (or gentle defaults)
+    emotions = df["emotion"].value_counts().index.tolist()
+    if not emotions:
+        emotions = ["hope","calm","awe"]
+
+    # background based on selected emotions (no fixed base tone)
+    bg = make_bg_from_emotions(width, height, emotions, palette, darkness=0.28, lightness=0.92)
+    canvas = bg.copy()
+
+    # render ribbons
+    for emo in emotions:
+        base_rgb = palette.get(emo, palette.get("mixed",(210,190,140)))
+        # jitter for richness and separation
+        emo_rgb = jitter_emotion_color(base_rgb, emo, amount=0.10)
+        for _ in range(max(1,int(bands_per_emotion))):
+            draw_ribbon(canvas, rng, emo_rgb, width_px=ribbon_width,
+                        smoothness=smoothness, flow_variance=flow_variance,
+                        alpha=alpha)
+
+    # mild global blur to increase silkiness
+    out = Image.fromarray((np.clip(canvas,0,1)*255).astype(np.uint8))
+    if blur_px > 0:
+        out = out.filter(ImageFilter.GaussianBlur(radius=blur_px))
+    return out
+
+# =========================
+# UI - Sidebar
 # =========================
 
 # ---- 1) Data Source (NewsAPI only)
 st.sidebar.header("1) Data Source (NewsAPI only)")
-st.sidebar.markdown("**Keyword** *(e.g., aurora borealis, space weather, AI, technology)*")
+st.sidebar.markdown("**Keyword** (e.g., aurora borealis, space weather, AI, technology)")
 keyword = st.sidebar.text_input("", value="")
 fetch_btn = st.sidebar.button("Fetch News")
 
@@ -479,22 +438,22 @@ if fetch_btn:
 
 if df.empty:
     df = pd.DataFrame({"text":[
-        "A breathtaking aurora illuminated the northern sky last night.",
-        "Calm atmospheric conditions create a beautiful environment.",
+        "A breathtaking flow of emotions spreads across the night sky.",
+        "Calm conditions create a gentle environment.",
         "Anxiety spreads among investors during unstable market conditions.",
-        "A moment of awe as the sky shines with green light.",
+        "A moment of awe as the stream of light dances.",
         "Hope arises as scientific discoveries advance our understanding."
     ]})
     df["timestamp"]=str(date.today())
 
 df["text"]=df["text"].fillna("")
 
-# Sentiment
+# Sentiment and emotion mapping
 sent_df=df["text"].apply(analyze_sentiment).apply(pd.Series)
 df=pd.concat([df.reset_index(drop=True),sent_df.reset_index(drop=True)],axis=1)
 df["emotion"]=df.apply(classify_emotion_expanded,axis=1)
 
-# ---- 2) Emotion Filter
+# ---- 2) Emotion Mapping
 st.sidebar.header("2) Emotion Mapping")
 cmp_min, cmp_max = st.sidebar.slider("Compound Range", -1.0,1.0,(-1.0,1.0),0.01)
 
@@ -513,67 +472,60 @@ def _label_emotion(e: str) -> str:
 
 options_labels = [_label_emotion(e) for e in all_emotions_for_ui]
 default_labels = [_label_emotion(e) for e in available_emotions] if available_emotions else options_labels
-
 selected_labels = st.sidebar.multiselect("Show Emotions:", options_labels, default=default_labels)
 selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
-df=df[(df["emotion"].isin(selected_emotions))&(df["compound"]>=cmp_min)&(df["compound"]<=cmp_max)]
 
-# ---- 3) Ribbon Engine — Flow
-st.sidebar.header("3) Ribbon Engine — Flow")
+df = df[(df["emotion"].isin(selected_emotions)) & (df["compound"]>=cmp_min) & (df["compound"]<=cmp_max)]
 
-blend_mode = st.sidebar.selectbox("Blend Mode", ["Additive","Linear Dodge","Normal"], index=0)  # kept for future extension
-ribbons_per_emotion = st.sidebar.slider("Ribbons per Emotion", 2, 32, 14, 1)
-stroke_width = st.sidebar.slider("Stroke Width", 1, 12, 4, 1)
-steps = st.sidebar.slider("Ribbon Length (steps)", 120, 1000, 420, 10)
-step_len = st.sidebar.slider("Step Length (px)", 0.5, 6.0, 2.2, 0.1)
-curve_noise = st.sidebar.slider("Curve Randomness", 0.00, 0.80, 0.30, 0.01)
-stroke_blur = st.sidebar.slider("Stroke Softness (blur px)", 0.0, 8.0, 0.0, 0.5)
-ribbon_alpha = st.sidebar.slider("Ribbon Alpha", 60, 255, 225, 5)
+# ---- 3) Ribbon Flow Engine (only)
+st.sidebar.header("3) Ribbon Flow Engine")
+bands = st.sidebar.slider("Bands per Emotion", 1, 6, 3, 1)
+ribbon_width = st.sidebar.slider("Ribbon Width (px)", 6.0, 40.0, 22.0, 0.5)
+smoothness = st.sidebar.slider("Curve Smoothness", 0.3, 1.2, 0.90, 0.01)
+flow_variance = st.sidebar.slider("Flow Randomness", 0.2, 4.0, 2.0, 0.1)
+blur_px = st.sidebar.slider("Silkiness Blur (px)", 0.0, 10.0, 2.5, 0.1)
+alpha_ribbon = st.sidebar.slider("Ribbon Opacity", 0.05, 0.45, 0.22, 0.01)
+img_brightness = st.sidebar.slider("Base Brightness", 0.8, 1.6, 1.10, 0.02)
 
-theme_name = st.sidebar.selectbox("Background Theme", list(THEMES.keys()), index=list(THEMES.keys()).index("Glacier Blue"))
-bg_brightness = st.sidebar.slider("Background Brightness", 0.6, 1.8, 1.15, 0.05)
-
-# ---- 4) Cinematic Color System (Controls)
+# ---- 4) Cinematic Color System
 st.sidebar.header("4) Cinematic Color System")
-
 palette_mode = st.sidebar.selectbox(
     "Palette Preset",
     list(CINEMATIC_PRESETS.keys()),
     index=list(CINEMATIC_PRESETS.keys()).index("Planetary (Soft)")
 )
-
-exp = st.sidebar.slider("Exposure (stops)", -0.2, 1.6, 0.50, 0.01)
-contrast = st.sidebar.slider("Contrast", 0.70, 1.80, 1.15, 0.01)
-saturation = st.sidebar.slider("Saturation", 0.70, 1.90, 1.12, 0.01)
-gamma_val = st.sidebar.slider("Gamma", 0.70, 1.40, 0.92, 0.01)
+exp = st.sidebar.slider("Exposure (stops)", -0.3, 1.7, 0.50, 0.01)
+contrast = st.sidebar.slider("Contrast", 0.70, 1.90, 1.20, 0.01)
+saturation = st.sidebar.slider("Saturation", 0.70, 2.00, 1.25, 0.01)
+gamma_val = st.sidebar.slider("Gamma", 0.70, 1.40, 0.95, 0.01)
 roll = st.sidebar.slider("Highlight Roll-off", 0.00, 1.50, 0.40, 0.01)
 
 st.sidebar.subheader("White Balance")
-temp = st.sidebar.slider("Temperature (Blue ↔ Red)", -1.0, 1.0, -0.05, 0.01)
+temp = st.sidebar.slider("Temperature (Blue ↔ Red)", -1.0, 1.0, 0.05, 0.01)
 tint = st.sidebar.slider("Tint (Green ↔ Magenta)", -1.0, 1.0, 0.02, 0.01)
 
 st.sidebar.subheader("Split Toning")
-sh_r = st.sidebar.slider("Shadows R", 0.0, 1.0, 0.08, 0.01)
-sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, 0.06, 0.01)
+sh_r = st.sidebar.slider("Shadows R", 0.0, 1.0, 0.10, 0.01)
+sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, 0.08, 0.01)
 sh_b = st.sidebar.slider("Shadows B", 0.0, 1.0, 0.16, 0.01)
-hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, 0.10, 0.01)
-hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, 0.08, 0.01)
-hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, 0.06, 0.01)
+hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, 0.12, 0.01)
+hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, 0.10, 0.01)
+hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, 0.08, 0.01)
 tone_balance = st.sidebar.slider("Tone Balance (Shadows ↔ Highlights)", -1.0, 1.0, 0.0, 0.01)
 
 st.sidebar.subheader("Bloom & Vignette")
-bloom_radius = st.sidebar.slider("Bloom Radius (px)", 0.0, 18.0, 7.0, 0.5)
-bloom_intensity = st.sidebar.slider("Bloom Intensity", 0.0, 1.0, 0.42, 0.01)
+bloom_radius = st.sidebar.slider("Bloom Radius (px)", 0.0, 20.0, 10.0, 0.5)
+bloom_intensity = st.sidebar.slider("Bloom Intensity", 0.0, 1.0, 0.55, 0.01)
 vignette_strength = st.sidebar.slider("Vignette Strength", 0.0, 0.8, 0.18, 0.01)
 
 # ---- 5) Auto Brightness Compensation
 st.sidebar.header("5) Auto Brightness Compensation")
 auto_bright = st.sidebar.checkbox("Enable Auto Brightness", value=True)
 target_mean = st.sidebar.slider("Target Mean Luminance", 0.30, 0.70, 0.50, 0.01)
-abc_strength = st.sidebar.slider("Remap Strength", 0.0, 1.0, 0.90, 0.05)
-abc_black = st.sidebar.slider("Black Point Percentile", 0.00, 0.20, 0.05, 0.01)
-abc_white = st.sidebar.slider("White Point Percentile", 0.80, 1.00, 0.997, 0.001)
-abc_max_gain = st.sidebar.slider("Max Gain", 1.0, 3.0, 2.6, 0.05)
+abc_strength = st.sidebar.slider("Remap Strength", 0.0, 1.0, 0.85, 0.05)
+abc_black = st.sidebar.slider("Black Point Percentile", 0.00, 0.20, 0.06, 0.01)
+abc_white = st.sidebar.slider("White Point Percentile", 0.80, 1.00, 0.995, 0.001)
+abc_max_gain = st.sidebar.slider("Max Gain", 1.0, 3.0, 2.4, 0.05)
 
 # ---- 6) Custom Palette (RGB)
 st.sidebar.header("6) Custom Palette (RGB)")
@@ -607,7 +559,7 @@ with st.sidebar.expander("Import / Export Palette CSV",False):
         dl = export_palette_csv(pal)
         st.download_button("Download CSV",data=dl,file_name="palette.csv",mime="text/csv")
 
-# ---- 7) Reset
+# ---- 7) Output
 st.sidebar.header("7) Output")
 if st.sidebar.button("Reset All"):
     st.session_state.clear()
@@ -619,79 +571,72 @@ if st.sidebar.button("Reset All"):
 left, right = st.columns([0.60,0.40])
 
 with left:
-    st.subheader("🎐 Ribbon Flow (Print-like)")
+    st.subheader("Flowing Ribbon Visual")
 
-    # apply palette preset
-    working_palette, preset_temp, preset_tint = apply_palette_preset(base_palette, palette_mode)
+    if df.empty:
+        st.warning("No data points under current filters.")
+    else:
+        # palette preset to enrich base hues
+        working_palette, preset_temp, preset_tint = apply_palette_preset(base_palette, palette_mode)
 
-    # render ribbons (deterministic-ish seed for refresh variety)
-    img = render_ribbons(
-        df=df, palette=working_palette, theme_name=theme_name,
-        width=1500, height=850, seed=np.random.randint(0, 999999),
-        ribbons_per_emotion=ribbons_per_emotion, steps=steps, step_len=step_len,
-        stroke_width=stroke_width, curve_noise=curve_noise, bg_brightness=bg_brightness,
-        ribbon_alpha=ribbon_alpha, stroke_blur=stroke_blur
-    )
-
-    # ======== Cinematic Color Pipeline ========
-    arr = np.array(img).astype(np.float32)/255.0
-
-    # exposure (linear domain)
-    lin = srgb_to_linear(arr)
-    lin = lin * (2.0 ** exp)
-
-    # white balance: preset + user
-    lin = apply_white_balance(lin, temp + preset_temp, tint + preset_tint)
-
-    # highlight roll-off (in linear)
-    lin = highlight_rolloff(lin, roll)
-
-    # back to display domain + filmic soft clamp
-    arr = linear_to_srgb(np.clip(lin, 0, 4))
-    arr = np.clip(filmic_tonemap(arr*1.25), 0, 1)
-
-    # contrast, saturation, gamma
-    arr = adjust_contrast(arr, contrast)
-    arr = adjust_saturation(arr, saturation)
-    arr = gamma_correct(arr, gamma_val)
-
-    # split toning
-    arr = split_tone(arr, (sh_r, sh_g, sh_b), (hi_r, hi_g, hi_b), tone_balance)
-
-    # auto brightness compensation (AFTER creative grading)
-    if auto_bright:
-        arr = auto_brightness_compensation(
-            arr,
-            target_mean=target_mean,
-            strength=abc_strength,
-            black_point_pct=abc_black,
-            white_point_pct=abc_white,
-            max_gain=abc_max_gain
+        # render ribbon flow (base domain: sRGB 0..1)
+        img = render_ribbon_flow(
+            df=df,
+            palette=working_palette,
+            width=1500,
+            height=850,
+            seed=np.random.randint(0, 999999),
+            bands_per_emotion=bands,
+            ribbon_width=ribbon_width,
+            smoothness=smoothness,
+            flow_variance=flow_variance,
+            blur_px=blur_px,
+            alpha=alpha_ribbon
         )
 
-    # bloom & vignette
-    arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
-    arr = apply_vignette(arr, strength=vignette_strength)
+        # base brightness lift (pre-grade)
+        arr = np.array(img).astype(np.float32)/255.0
+        arr = np.clip(arr * img_brightness, 0, 1)
 
-    # ensure colorfulness (keep subtle, as you like the blue-white print style)
-    arr = ensure_colorfulness(arr, min_sat=0.12, boost=1.12)
+        # ======== Cinematic Color Pipeline ========
+        lin = srgb_to_linear(arr)
+        lin = lin * (2.0 ** exp)
+        lin = apply_white_balance(lin, temp + preset_temp, tint + preset_tint)
+        lin = highlight_rolloff(lin, roll)
+        arr = linear_to_srgb(np.clip(lin, 0, 6))
+        arr = np.clip(filmic_tonemap(arr*1.25), 0, 1)
+        arr = adjust_contrast(arr, contrast)
+        arr = adjust_saturation(arr, saturation)
+        arr = gamma_correct(arr, gamma_val)
+        arr = split_tone(arr, (sh_r, sh_g, sh_b), (hi_r, hi_g, hi_b), tone_balance)
 
-    final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8), mode="RGB")
+        if auto_bright:
+            arr = auto_brightness_compensation(
+                arr,
+                target_mean=target_mean,
+                strength=abc_strength,
+                black_point_pct=abc_black,
+                white_point_pct=abc_white,
+                max_gain=abc_max_gain
+            )
 
-    buf=BytesIO(); final_img.save(buf, format="PNG"); buf.seek(0)
-    st.image(buf,use_column_width=True)
-    st.download_button("💾 Download PNG",data=buf,file_name="ribbon_flow_print.png",mime="image/png")
+        arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
+        arr = apply_vignette(arr, strength=vignette_strength)
+        arr = ensure_colorfulness(arr, min_sat=0.20, boost=1.22)
+
+        final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8), mode="RGB")
+        buf=BytesIO(); final_img.save(buf, format="PNG"); buf.seek(0)
+        st.image(buf,use_column_width=True)
+        st.download_button("Download PNG",data=buf,file_name="ribbon_flow_cinematic.png",mime="image/png")
 
 with right:
-    st.subheader("📊 Data & Emotion")
+    st.subheader("Data & Emotion")
     df2=df.copy()
-    df2["emotion_display"]=df2["emotion"].apply(
-        lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
-    )
+    df2["emotion_display"]=df2["emotion"].apply(lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})")
     cols=["text","emotion_display","compound","pos","neu","neg"]
     if "timestamp" in df.columns: cols.insert(1,"timestamp")
     if "source" in df.columns: cols.insert(2,"source")
     st.dataframe(df2[cols],use_container_width=True,height=600)
 
 st.markdown("---")
-st.caption("© 2025 Emotional Ribbon — Flow Edition")
+st.caption("© 2025 Emotional Ribbon Flow — Cinematic Edition")
