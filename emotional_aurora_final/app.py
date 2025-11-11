@@ -498,4 +498,4 @@ if fetch_btn:
 if df.empty:
     df = pd.DataFrame({"text":[
         "A breathtaking aurora illuminated the northern sky last night.",
-        "Calm atmospheric conditions create a beautiful environment
+        "Calm atmospheric conditions create a beautiful environment."
