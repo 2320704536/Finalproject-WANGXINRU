@@ -120,6 +120,7 @@ def classify_emotion_expanded(row):
     if neu > 0.6 and 0.05 <= comp <= 0.15: return "awe"
     return "neutral"
 
+
 # =========================
 # Palette state
 # =========================
@@ -189,12 +190,9 @@ def jitter_color(rgb01, rng, amount=0.06):
 # 多边形生成/绘制
 # =========================
 def random_convex_polygon(center, rng, min_r=30, max_r=180, sides=5):
-    """围绕center随机生成近似凸多边形点集"""
     cx, cy = center
-    # 随机角度均匀分布
     angles = np.sort(rng.random(sides) * 2*np.pi)
     radii = rng.uniform(min_r, max_r, size=sides)
-    # 轻微扰动，避免过规整
     jitter = rng.normal(1.0, 0.08, size=sides)
     pts = []
     for a, r, j in zip(angles, radii, jitter):
@@ -205,7 +203,6 @@ def random_convex_polygon(center, rng, min_r=30, max_r=180, sides=5):
     return pts
 
 def draw_polygon_soft(canvas_rgba, pts, color01, fill_alpha=200, blur_px=6, edge_width=0):
-    """在独立图层柔化填充多边形并合成"""
     W, H = canvas_rgba.size
     layer = Image.new("RGBA", (W,H), (0,0,0,0))
     d = ImageDraw.Draw(layer, "RGBA")
@@ -219,14 +216,12 @@ def draw_polygon_soft(canvas_rgba, pts, color01, fill_alpha=200, blur_px=6, edge
     canvas_rgba.alpha_composite(layer)
 
 def safe_text_bbox(draw, text, font):
-    # Pillow新版本推荐textbbox
     try:
         bbox = draw.textbbox((0,0), text, font=font)
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         return w, h
     except Exception:
-        # 兜底：用旧接口
         try:
             w, h = draw.textsize(text, font=font)
             return w, h
@@ -239,17 +234,14 @@ def add_title(img_rgb, title, color_rgb=(255,255,255)):
     overlay = Image.new("RGBA", (W,H), (0,0,0,0))
     d = ImageDraw.Draw(overlay, "RGBA")
     try:
-        # 可选系统字体；若不可用则回退默认
         font = ImageFont.truetype("DejaVuSans-Bold.ttf", size=int(H*0.06))
     except Exception:
         font = ImageFont.load_default()
     tw, th = safe_text_bbox(d, title, font)
     pad = int(H*0.02)
     x, y = pad, pad
-    # 半透明底条
     bg_rect = [x-10, y-6, x+tw+16, y+th+10]
     d.rectangle(bg_rect, fill=(0,0,0,140), outline=None)
-    # 标题
     d.text((x,y), title, font=font, fill=(color_rgb[0], color_rgb[1], color_rgb[2], 255))
     rgba.alpha_composite(overlay)
     return rgba.convert("RGB")
@@ -259,7 +251,7 @@ def add_title(img_rgb, title, color_rgb=(255,255,255)):
 # =========================
 def render_polymix(
     df, palette, width=1500, height=850, seed=12345,
-    shapes_per_emotion=10,   # 使用“Ribbons per Emotion”的值
+    shapes_per_emotion=10,
     min_size=60, max_size=220,
     shape_sides_min=4, shape_sides_max=8,
     fill_alpha=210, blur_px=6,
@@ -276,7 +268,6 @@ def render_polymix(
     for emo in emotions:
         base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
         base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
-        # 不同情绪不同的碎片大小倾向
         size_bias = 1.0
         if emo in ("joy","love","pride","surprise"):
             size_bias = 1.2
@@ -291,16 +282,17 @@ def render_polymix(
             sides = int(rng.integers(shape_sides_min, shape_sides_max+1))
             pts = random_convex_polygon((cx,cy), rng, min_r=smin, max_r=smax, sides=sides)
 
-            # 颜色微抖动 + 分层透明
             col01 = jitter_color(base01, rng, amount=0.07)
             local_alpha = int(np.clip(fill_alpha * rng.uniform(0.85, 1.05), 40, 255))
             local_blur  = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
             edge_w = 0 if rng.random() < 0.6 else max(1, int(smin*0.02))
 
-            draw_polygon_soft(canvas, pts, col01, fill_alpha=local_alpha, blur_px=local_blur, edge_width=edge_w)
+            draw_polygon_soft(canvas, pts, col01,
+                fill_alpha=local_alpha, blur_px=local_blur, edge_width=edge_w)
 
     base.alpha_composite(canvas)
     return base.convert("RGB")
+
 
 # =========================
 # Cinematic Color（可选）
@@ -381,6 +373,7 @@ def ensure_colorfulness(img, min_sat=0.16, boost=1.18):
         return adjust_saturation(img, boost)
     return img
 
+
 def auto_brightness_compensation(img_arr, target_mean=0.50, strength=0.9,
                                  black_point_pct=0.05, white_point_pct=0.997,
                                  max_gain=2.6):
@@ -411,18 +404,15 @@ def auto_brightness_compensation(img_arr, target_mean=0.50, strength=0.9,
 # =========================
 DEFAULTS = {
     "keyword": "",
-    "ribbons_per_emotion": 10,  # 现在代表每种情绪的多边形数量（默认降低，避免碎片太多）
-    "stroke_width": 5,          # 不再用于线段，保留不影响布局
-    "steps": 520,               # 占位，不参与多边形
-    "step_len": 2.4,            # 占位
-    "curve_noise": 0.34,        # 占位
-    "stroke_blur": 6.0,         # 用作多边形软化默认模糊
-    "ribbon_alpha": 210,        # 用作多边形透明度
-
-    # 背景：仅自定义，默认纯黑
+    "ribbons_per_emotion": 10,
+    "stroke_width": 5,
+    "steps": 520,
+    "step_len": 2.4,
+    "curve_noise": 0.34,
+    "stroke_blur": 6.0,
+    "ribbon_alpha": 210,
     "bg_custom": "#000000",
 
-    # 多边形形状控制（新增，挂在现有“Ribbon Engine”分区下方）
     "poly_min_size": 70,
     "poly_max_size": 220,
     "poly_sides_min": 4,
@@ -449,24 +439,25 @@ DEFAULTS = {
     "bloom_intensity": 0.40,
     "cmp_min": -1.0,
     "cmp_max": 1.0,
-    "auto_top3": True,  # 自动选择最多的3个情绪
+    "auto_top3": True,
 }
 
 def reset_all():
     st.session_state.clear()
     st.rerun()
 
+
 # =========================
-# 使用说明（简短）
+# 使用说明
 # =========================
 with st.expander("How to Use", expanded=False):
     st.markdown("""
-1) 在 **Keyword** 里输入关键词（示例：`AI`, `aurora borealis`, `technology`, `science`），点击 **Fetch News**  
-2) 系统用 VADER 映射为情绪，并**自动勾选 Top-3**（可手动增删）  
-3) 左侧调参数（多边形数量/大小/模糊/透明度、背景色、电影级调色、自动亮度）  
-4) 画面左上角自动写入**主情绪名称**（Top-1）  
-5) 下方下载 PNG
+1) 在 **Keyword** 里输入关键词，点击 **Fetch News**  
+2) 或者点击 **Random Generate** 随机生成 8 条文本  
+3) 系统自动映射情绪 → 生成多边形 → 电影级调色  
+4) 下载 PNG
 """)
+
 
 # =========================
 # Sidebar — Data Source
@@ -478,17 +469,44 @@ keyword = st.sidebar.text_input(
     key="keyword",
     placeholder="e.g., AI"
 )
-fetch_btn = st.sidebar.button("Fetch News")
 
-# Fetch or fallback
+fetch_btn = st.sidebar.button("Fetch News")
+random_btn = st.sidebar.button("Random Generate")   # ⭐ 新增按钮
+
+
+# =========================
+# Random / Fetch / Fallback
+# =========================
 df = pd.DataFrame()
-if fetch_btn:
+
+# === NEW: random generate ===
+if random_btn:
+    sample_emotions = [
+        "joy","love","pride","hope","curiosity","calm","surprise",
+        "nostalgia","sadness","anger","fear","awe","gratitude","trust"
+    ]
+    rng = np.random.default_rng()
+    fake_texts = []
+    for _ in range(8):
+        emo = rng.choice(sample_emotions)
+        sentence = f"A moment of {emo} fills the atmosphere with shifting colors."
+        fake_texts.append(sentence)
+
+    df = pd.DataFrame({
+        "text": fake_texts,
+        "timestamp": str(date.today()),
+        "source": "RandomGen"
+    })
+
+# === fetch news ===
+elif fetch_btn:
     key = st.secrets.get("NEWS_API_KEY","")
     if not key:
         st.sidebar.error("Missing NEWS_API_KEY in Secrets")
     else:
         df = fetch_news(key, keyword if keyword.strip() else "aurora")
 
+# === fallback ===
 if df.empty:
     df = pd.DataFrame({"text":[
         "A breathtaking aurora illuminated the northern sky last night.",
@@ -499,21 +517,24 @@ if df.empty:
     ]})
     df["timestamp"]=str(date.today())
 
+
+# =========================
+# Emotion Mapping
+# =========================
 df["text"] = df["text"].fillna("")
 sent_df = df["text"].apply(analyze_sentiment).apply(pd.Series)
 df = pd.concat([df.reset_index(drop=True), sent_df.reset_index(drop=True)], axis=1)
 df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
 
+
 # =========================
-# Sidebar — Emotion Mapping
+# Sidebar — Emotion Filtering
 # =========================
 st.sidebar.header("2) Emotion Mapping")
 cmp_min = st.sidebar.slider("Compound Min", -1.0, 1.0,
-                            st.session_state.get("cmp_min", DEFAULTS["cmp_min"]),
-                            0.01, key="cmp_min")
+    st.session_state.get("cmp_min", DEFAULTS["cmp_min"]), 0.01, key="cmp_min")
 cmp_max = st.sidebar.slider("Compound Max", -1.0, 1.0,
-                            st.session_state.get("cmp_max", DEFAULTS["cmp_max"]),
-                            0.01, key="cmp_max")
+    st.session_state.get("cmp_max", DEFAULTS["cmp_max"]), 0.01, key="cmp_max")
 
 init_palette_state()
 base_palette = get_active_palette()
@@ -524,14 +545,14 @@ def _label_emotion(e: str) -> str:
     if e in COLOR_NAMES:
         return f"{e} ({COLOR_NAMES[e]})"
     r, g, b = base_palette.get(e, (0, 0, 0))
-    return f"{e} (Custom {r},{g},{b})"
+        return f"{e} (Custom {r},{g},{b})"
 
-# 自动选择 Top-3（获取后默认）
 auto_top3 = st.sidebar.checkbox(
     "Auto-select Top-3 emotions after fetch",
     value=st.session_state.get("auto_top3", DEFAULTS["auto_top3"]),
     key="auto_top3"
 )
+
 top3 = []
 if auto_top3 and len(df):
     vc = df["emotion"].value_counts()
