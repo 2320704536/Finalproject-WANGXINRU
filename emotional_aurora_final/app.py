@@ -1028,9 +1028,6 @@ img = render_crystalmix(
     wobble=wobble_control,          # ← new wobble
     layers=layer_count              # ← new layer count
 )
-
-
-
     # Convert to array
     arr = np.array(img).astype(np.float32)/255.0
     lin = srgb_to_linear(arr)
