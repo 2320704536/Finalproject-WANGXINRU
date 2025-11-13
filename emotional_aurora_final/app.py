@@ -1,4 +1,7 @@
-# app.py
+# ============================================================
+# Emotional Crystal — FINAL FULL VERSION (Part 1 / 6)
+# ============================================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,12 +11,13 @@ import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
 from datetime import date
+import math
 
 # =========================
 # App setup
 # =========================
-st.set_page_config(page_title="Emotional Ribbon — Final", page_icon="🎐", layout="wide")
-st.title("🎐 Emotional Ribbon — Final (Colorful Polygon Mix)")
+st.set_page_config(page_title="Emotional Crystal — Final", page_icon="❄️", layout="wide")
+st.title("❄️ Emotional Crystal — Final (Ice Crystal Visualization)")
 
 # =========================
 # VADER
@@ -57,7 +61,7 @@ def fetch_news(api_key, keyword="technology", page_size=50):
         return pd.DataFrame()
 
 # =========================
-# Emotion colors — 高饱和、区分度强
+# Emotion colors
 # =========================
 DEFAULT_RGB = {
     "joy":        (255,200,60),
@@ -92,7 +96,7 @@ COLOR_NAMES = {
 }
 
 # =========================
-# Sentiment→Emotion
+# Sentiment → Emotion
 # =========================
 def analyze_sentiment(text):
     if not isinstance(text, str) or not text.strip():
@@ -120,7 +124,6 @@ def classify_emotion_expanded(row):
     if neu > 0.6 and 0.05 <= comp <= 0.15: return "awe"
     return "neutral"
 
-
 # =========================
 # Palette state
 # =========================
@@ -141,32 +144,62 @@ def add_custom_emotion(name, r, g, b):
     if not name: return
     st.session_state["custom_palette"][name.strip()] = (int(r),int(g),int(b))
 
-def import_palette_csv(file):
-    try:
-        dfc = pd.read_csv(file)
-        need = {"emotion","r","g","b"}
-        cols = {c.lower():c for c in dfc.columns}
-        if not need.issubset(cols.keys()):
-            st.error("CSV must include emotion,r,g,b columns"); return
-        pal = {}
-        for _, row in dfc.iterrows():
-            emo = str(row[cols["emotion"]]).strip()
-            try:
-                r=int(row[cols["r"]]); g=int(row[cols["g"]]); b=int(row[cols["b"]])
-            except: continue
-            pal[emo]=(r,g,b)
-        st.session_state["custom_palette"] = pal
-        st.success(f"Imported {len(pal)} colors from CSV.")
-    except Exception as e:
-        st.error(f"CSV import error: {e}")
+# =========================
+# Crystal Shape (❄️ NEW)
+# =========================
+def crystal_shape(center=(0.5, 0.5), r=150, wobble=0.25, sides_min=5, sides_max=10, rng=None):
+    if rng is None:
+        rng = np.random.default_rng()
 
-def export_palette_csv(pal):
-    buf = BytesIO()
-    pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()]).to_csv(buf, index=False)
-    buf.seek(0); return buf
+    cx, cy = center
+    n_vertices = int(rng.integers(sides_min, sides_max + 1))
+
+    angles = np.linspace(0, 2*np.pi, n_vertices, endpoint=False)
+    rng.shuffle(angles)
+
+    radii = r * (1 + rng.uniform(-wobble, wobble, size=n_vertices))
+
+    pts = []
+    for a, rr in zip(angles, radii):
+        x = cx + rr * math.cos(a)
+        y = cy + rr * math.sin(a)
+        pts.append((float(x), float(y)))
+
+    pts.append(pts[0])
+    return pts
 
 # =========================
-# Color helpers（保持亮、避免黑线）
+# Soft Polygon Draw (used also for crystal)
+# =========================
+def draw_polygon_soft(canvas_rgba, pts, color01, fill_alpha=200, blur_px=6, edge_width=0):
+    W, H = canvas_rgba.size
+    layer = Image.new("RGBA", (W,H), (0,0,0,0))
+    d = ImageDraw.Draw(layer, "RGBA")
+
+    col = (
+        int(color01[0]*255),
+        int(color01[1]*255),
+        int(color01[2]*255),
+        int(fill_alpha)
+    )
+
+    d.polygon(pts, fill=col)
+
+    if edge_width > 0:
+        edge = (255,255,255,max(80, fill_alpha//2))
+        d.line(pts, fill=edge, width=edge_width, joint="curve")
+
+    if blur_px > 0:
+        layer = layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
+
+    canvas_rgba.alpha_composite(layer)
+# ============================================================
+# Emotional Crystal — FULL VERSION (Part 2 / 6)
+# Crystal Renderer & Cinematic Color Functions
+# ============================================================
+
+# =========================
+# Color helpers
 # =========================
 def _rgb01(rgb):
     c = np.array(rgb, dtype=np.float32)/255.0
@@ -187,75 +220,15 @@ def jitter_color(rgb01, rng, amount=0.06):
     return tuple(c.tolist())
 
 # =========================
-# 多边形生成/绘制
+# Render Ice-Crystal Mix (❄️ NEW)
 # =========================
-def random_convex_polygon(center, rng, min_r=30, max_r=180, sides=5):
-    cx, cy = center
-    angles = np.sort(rng.random(sides) * 2*np.pi)
-    radii = rng.uniform(min_r, max_r, size=sides)
-    jitter = rng.normal(1.0, 0.08, size=sides)
-    pts = []
-    for a, r, j in zip(angles, radii, jitter):
-        rr = max(5.0, r*j)
-        x = cx + rr*np.cos(a)
-        y = cy + rr*np.sin(a)
-        pts.append((float(x), float(y)))
-    return pts
-
-def draw_polygon_soft(canvas_rgba, pts, color01, fill_alpha=200, blur_px=6, edge_width=0):
-    W, H = canvas_rgba.size
-    layer = Image.new("RGBA", (W,H), (0,0,0,0))
-    d = ImageDraw.Draw(layer, "RGBA")
-    col = (int(color01[0]*255), int(color01[1]*255), int(color01[2]*255), int(fill_alpha))
-    d.polygon(pts, fill=col)
-    if edge_width > 0:
-        edge = (255,255,255,max(80, fill_alpha//2))
-        d.line(pts + [pts[0]], fill=edge, width=edge_width, joint="curve")
-    if blur_px > 0:
-        layer = layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
-    canvas_rgba.alpha_composite(layer)
-
-def safe_text_bbox(draw, text, font):
-    try:
-        bbox = draw.textbbox((0,0), text, font=font)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        return w, h
-    except Exception:
-        try:
-            w, h = draw.textsize(text, font=font)
-            return w, h
-        except Exception:
-            return 0, 0
-
-def add_title(img_rgb, title, color_rgb=(255,255,255)):
-    W, H = img_rgb.size
-    rgba = img_rgb.convert("RGBA")
-    overlay = Image.new("RGBA", (W,H), (0,0,0,0))
-    d = ImageDraw.Draw(overlay, "RGBA")
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", size=int(H*0.06))
-    except Exception:
-        font = ImageFont.load_default()
-    tw, th = safe_text_bbox(d, title, font)
-    pad = int(H*0.02)
-    x, y = pad, pad
-    bg_rect = [x-10, y-6, x+tw+16, y+th+10]
-    d.rectangle(bg_rect, fill=(0,0,0,140), outline=None)
-    d.text((x,y), title, font=font, fill=(color_rgb[0], color_rgb[1], color_rgb[2], 255))
-    rgba.alpha_composite(overlay)
-    return rgba.convert("RGB")
-
-# =========================
-# 渲染：多边形合成（替代丝带）
-# =========================
-def render_polymix(
-    df, palette, width=1500, height=850, seed=12345,
+def render_crystalmix(
+    df, palette,
+    width=1500, height=850, seed=12345,
     shapes_per_emotion=10,
     min_size=60, max_size=220,
-    shape_sides_min=4, shape_sides_max=8,
     fill_alpha=210, blur_px=6,
-    bg_color=(0,0,0)
+    bg_color=(0,0,0),
 ):
     rng = np.random.default_rng(seed)
     base = Image.new("RGBA", (width, height), (bg_color[0], bg_color[1], bg_color[2], 255))
@@ -268,35 +241,39 @@ def render_polymix(
     for emo in emotions:
         base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
         base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
-        size_bias = 1.0
-        if emo in ("joy","love","pride","surprise"):
-            size_bias = 1.2
-        elif emo in ("calm","nostalgia","awe","trust"):
-            size_bias = 0.95
 
         for _ in range(max(1, int(shapes_per_emotion))):
             cx = rng.uniform(0.05*width, 0.95*width)
             cy = rng.uniform(0.08*height, 0.92*height)
-            smin = max(20, int(min_size*size_bias*rng.uniform(0.8,1.2)))
-            smax = max(smin+5, int(max_size*size_bias*rng.uniform(0.8,1.3)))
-            sides = int(rng.integers(shape_sides_min, shape_sides_max+1))
-            pts = random_convex_polygon((cx,cy), rng, min_r=smin, max_r=smax, sides=sides)
+
+            rr = int(rng.uniform(min_size, max_size))
+
+            pts = crystal_shape(
+                center=(cx,cy),
+                r=rr,
+                wobble=0.25,
+                sides_min=5,
+                sides_max=10,
+                rng=rng
+            )
 
             col01 = jitter_color(base01, rng, amount=0.07)
             local_alpha = int(np.clip(fill_alpha * rng.uniform(0.85, 1.05), 40, 255))
-            local_blur  = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
-            edge_w = 0 if rng.random() < 0.6 else max(1, int(smin*0.02))
+            local_blur = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
+            edge_w = 0 if rng.random() < 0.6 else max(1, int(rr*0.02))
 
             draw_polygon_soft(canvas, pts, col01,
-                fill_alpha=local_alpha, blur_px=local_blur, edge_width=edge_w)
+                fill_alpha=local_alpha,
+                blur_px=local_blur,
+                edge_width=edge_w)
 
     base.alpha_composite(canvas)
     return base.convert("RGB")
 
+# =========================
+# Cinematic Color System
+# =========================
 
-# =========================
-# Cinematic Color（可选）
-# =========================
 def srgb_to_linear(x):
     x = np.clip(x, 0, 1)
     return np.where(x <= 0.04045, x/12.92, ((x+0.055)/1.055)**2.4)
@@ -373,31 +350,44 @@ def ensure_colorfulness(img, min_sat=0.16, boost=1.18):
         return adjust_saturation(img, boost)
     return img
 
-
+# =========================
+# Auto Brightness Compensation
+# =========================
 def auto_brightness_compensation(img_arr, target_mean=0.50, strength=0.9,
                                  black_point_pct=0.05, white_point_pct=0.997,
                                  max_gain=2.6):
     arr = np.clip(img_arr, 0, 1).astype(np.float32)
     lin = srgb_to_linear(arr)
     Y = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
+
     bp = np.quantile(Y, black_point_pct)
     wp = np.quantile(Y, white_point_pct)
-    if wp <= bp + 1e-6: wp = bp + 1e-3
+    if wp <= bp + 1e-6:
+        wp = bp + 1e-3
+
     Y_remap = np.clip((Y - bp) / (wp - bp), 0, 1)
     remap_gain = np.clip(strength, 0, 1)
     Y_final = (1-remap_gain)*Y + remap_gain*Y_remap
+
     meanY = max(Y_final.mean(), 1e-4)
     gain = np.clip(target_mean / meanY, 1.0/max_gain, max_gain)
     lin *= gain
+
     Y2 = 0.2126*lin[:,:,0] + 0.7152*lin[:,:,1] + 0.0722*lin[:,:,2]
     blend = 0.65*remap_gain
     Y_mix = (1-blend)*Y2 + blend*np.clip(Y_final*gain, 0, 2.5)
+
     ratio = (Y_mix + 1e-6) / (Y2 + 1e-6)
     lin = np.clip(lin * ratio[...,None], 0, 4)
+
     out = filmic_tonemap(np.clip(lin,0,4))
     out = np.clip(out, 0, 1)
     out = linear_to_srgb(out)
     return np.clip(out, 0, 1)
+# ============================================================
+# Emotional Crystal — FULL VERSION (Part 3 / 6)
+# Sidebar UI + Data Loading (Keyword & Random Generate)
+# ============================================================
 
 # =========================
 # Defaults & Reset
@@ -405,18 +395,11 @@ def auto_brightness_compensation(img_arr, target_mean=0.50, strength=0.9,
 DEFAULTS = {
     "keyword": "",
     "ribbons_per_emotion": 10,
-    "stroke_width": 5,
-    "steps": 520,
-    "step_len": 2.4,
-    "curve_noise": 0.34,
     "stroke_blur": 6.0,
     "ribbon_alpha": 210,
-    "bg_custom": "#000000",
 
     "poly_min_size": 70,
     "poly_max_size": 220,
-    "poly_sides_min": 4,
-    "poly_sides_max": 8,
 
     "auto_bright": True,
     "target_mean": 0.52,
@@ -424,95 +407,88 @@ DEFAULTS = {
     "abc_black": 0.05,
     "abc_white": 0.997,
     "abc_max_gain": 2.6,
+
     "exp": 0.55,
     "contrast": 1.18,
     "saturation": 1.18,
     "gamma_val": 0.92,
     "roll": 0.40,
+
     "temp": 0.00,
     "tint": 0.00,
+
     "sh_r": 0.08, "sh_g": 0.06, "sh_b": 0.16,
     "hi_r": 0.10, "hi_g": 0.08, "hi_b": 0.06,
     "tone_balance": 0.0,
+
     "vignette_strength": 0.16,
     "bloom_radius": 7.0,
     "bloom_intensity": 0.40,
+
     "cmp_min": -1.0,
     "cmp_max": 1.0,
     "auto_top3": True,
+
+    "bg_custom": "#000000"
 }
 
 def reset_all():
     st.session_state.clear()
     st.rerun()
 
-
-# =========================
-# 使用说明
-# =========================
-with st.expander("How to Use", expanded=False):
-    st.markdown("""
-1) 在 **Keyword** 里输入关键词，点击 **Fetch News**  
-2) 或者点击 **Random Generate** 随机生成 8 条文本  
-3) 系统自动映射情绪 → 生成多边形 → 电影级调色  
-4) 下载 PNG
-""")
-
-
 # =========================
 # Sidebar — Data Source
 # =========================
 st.sidebar.header("1) Data Source (NewsAPI)")
 keyword = st.sidebar.text_input(
-    "Keyword (e.g., AI, aurora borealis, technology, science)",
+    "Keyword (e.g., AI, aurora, science)",
     value=st.session_state.get("keyword", DEFAULTS["keyword"]),
     key="keyword",
     placeholder="e.g., AI"
 )
 
 fetch_btn = st.sidebar.button("Fetch News")
-random_btn = st.sidebar.button("Random Generate")   # ⭐ 新增按钮
-
+random_btn = st.sidebar.button("Random Generate (Crystal Mode)")  # ❄️ NEW
 
 # =========================
-# Random / Fetch / Fallback
+# Load Data (Random / Fetch / Fallback)
 # =========================
 df = pd.DataFrame()
 
-# === NEW: random generate ===
+# ❄️ RANDOM MODE：文本随机 + 颜色随机 + emotion = crystal_xxx
 if random_btn:
     rng = np.random.default_rng()
+    
+    num_items = 12
+    texts = []
+    emos = []
 
-    num_items = 8
-    fake_texts = []
-    random_emotions = []
-    random_palette = {}
+    # 清空 palette
+    st.session_state["custom_palette"] = {}
 
     for i in range(num_items):
-        # 随机文本
-        sentence = f"A randomly generated abstract moment #{i+1} explores shifting colors."
-        fake_texts.append(sentence)
+        texts.append(f"Random crystal fragment #{i+1}")
 
-        # 随机 emotion 名（不会跟已有 emotion 冲突）
-        emo = f"random_{i+1}"
-        random_emotions.append(emo)
+        emo = f"crystal_{i+1}"
+        emos.append(emo)
 
-        # 随机颜色
         r = int(rng.integers(0, 256))
         g = int(rng.integers(0, 256))
         b = int(rng.integers(0, 256))
 
-        # 加入 palette（覆盖默认 emotion → 完全自定义颜色）
-        st.session_state["custom_palette"][emo] = (r, g, b)
+        # 完全随机颜色
+        st.session_state["custom_palette"][emo] = (r,g,b)
 
     df = pd.DataFrame({
-        "text": fake_texts,
-        "emotion": random_emotions,
+        "text": texts,
+        "emotion": emos,
         "timestamp": str(date.today()),
-        "source": "RandomGen"
+        "compound": 0,
+        "pos": 0, "neu": 1, "neg": 0,
+        "source": "CrystalGen"
     })
 
-# === fetch news ===
+# 🔍 FETCH NEWS MODE
 elif fetch_btn:
     key = st.secrets.get("NEWS_API_KEY","")
     if not key:
@@ -520,7 +496,7 @@ elif fetch_btn:
     else:
         df = fetch_news(key, keyword if keyword.strip() else "aurora")
 
-# === fallback ===
+# 🌈 DEFAULT DEMO TEXTS
 if df.empty:
     df = pd.DataFrame({"text":[
         "A breathtaking aurora illuminated the northern sky last night.",
@@ -529,214 +505,359 @@ if df.empty:
         "A moment of awe as the sky shines with green light.",
         "Hope arises as scientific discoveries advance our understanding."
     ]})
-    df["timestamp"]=str(date.today())
-
+    df["timestamp"] = str(date.today())
 
 # =========================
-# Emotion Mapping
+# Sentiment & Emotion Mapping
 # =========================
 df["text"] = df["text"].fillna("")
-sent_df = df["text"].apply(analyze_sentiment).apply(pd.Series)
-df = pd.concat([df.reset_index(drop=True), sent_df.reset_index(drop=True)], axis=1)
-df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
 
+if "emotion" not in df.columns:
+    sent_df = df["text"].apply(analyze_sentiment).apply(pd.Series)
+    df = pd.concat([df.reset_index(drop=True), sent_df.reset_index(drop=True)], axis=1)
+    df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
 
 # =========================
-# Sidebar — Emotion Filtering
+# Sidebar — Emotion Mapping
 # =========================
 st.sidebar.header("2) Emotion Mapping")
+
 cmp_min = st.sidebar.slider("Compound Min", -1.0, 1.0,
-    st.session_state.get("cmp_min", DEFAULTS["cmp_min"]), 0.01, key="cmp_min")
+    st.session_state.get("cmp_min", DEFAULTS["cmp_min"]), 0.01)
 cmp_max = st.sidebar.slider("Compound Max", -1.0, 1.0,
-    st.session_state.get("cmp_max", DEFAULTS["cmp_max"]), 0.01, key="cmp_max")
+    st.session_state.get("cmp_max", DEFAULTS["cmp_max"]), 0.01)
 
 init_palette_state()
 base_palette = get_active_palette()
 
+# Available = from df
 available_emotions = sorted(df["emotion"].unique().tolist())
 
 def _label_emotion(e: str) -> str:
     if e in COLOR_NAMES:
         return f"{e} ({COLOR_NAMES[e]})"
-    r, g, b = base_palette.get(e, (0, 0, 0))
+    r, g, b = base_palette.get(e, (0,0,0))
     return f"{e} (Custom {r},{g},{b})"
 
-
 auto_top3 = st.sidebar.checkbox(
-    "Auto-select Top-3 emotions after fetch",
-    value=st.session_state.get("auto_top3", DEFAULTS["auto_top3"]),
-    key="auto_top3"
+    "Auto-select Top-3 emotions",
+    value=st.session_state.get("auto_top3", DEFAULTS["auto_top3"])
 )
 
 top3 = []
-if auto_top3 and len(df):
+if auto_top3:
     vc = df["emotion"].value_counts()
     top3 = vc.head(3).index.tolist()
 
-options_labels = [_label_emotion(e) for e in ALL_EMOTIONS]
+option_labels = [_label_emotion(e) for e in available_emotions]
 default_labels = [_label_emotion(e) for e in (top3 if top3 else available_emotions)]
-selected_labels = st.sidebar.multiselect("Selected Emotions", options_labels, default=default_labels)
+
+selected_labels = st.sidebar.multiselect(
+    "Selected Emotions",
+    option_labels,
+    default=default_labels
+)
+
 selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 
-df = df[(df["emotion"].isin(selected_emotions)) & (df["compound"]>=cmp_min) & (df["compound"]<=cmp_max)]
+df = df[(df["emotion"].isin(selected_emotions))
+        & (df["compound"] >= cmp_min)
+        & (df["compound"] <= cmp_max)]
+# ============================================================
+# Emotional Crystal — FULL VERSION (Part 4 / 6)
+# Crystal Engine Sidebar + Cinematic Color Controls
+# ============================================================
 
 # =========================
-# Sidebar — Ribbon Engine（沿用名；用于多边形参数）
+# Sidebar — Crystal Engine
 # =========================
-st.sidebar.header("3) Ribbon Engine")
-ribbons_per_emotion = st.sidebar.slider("Shapes per Emotion", 1, 40,
-    st.session_state.get("ribbons_per_emotion", DEFAULTS["ribbons_per_emotion"]), 1, key="ribbons_per_emotion")
-stroke_width = st.sidebar.slider("Stroke Width (unused for polygons)", 1, 24,
-    st.session_state.get("stroke_width", DEFAULTS["stroke_width"]), 1, key="stroke_width")
-steps = st.sidebar.slider("Ribbon Length (unused)", 120, 1500,
-    st.session_state.get("steps", DEFAULTS["steps"]), 10, key="steps")
-step_len = st.sidebar.slider("Step Length (unused)", 0.5, 8.0,
-    st.session_state.get("step_len", DEFAULTS["step_len"]), 0.1, key="step_len")
-curve_noise = st.sidebar.slider("Curve Randomness (unused)", 0.00, 0.90,
-    st.session_state.get("curve_noise", DEFAULTS["curve_noise"]), 0.01, key="curve_noise")
-stroke_blur = st.sidebar.slider("Polygon Softness (blur px)", 0.0, 20.0,
-    st.session_state.get("stroke_blur", DEFAULTS["stroke_blur"]), 0.5, key="stroke_blur")
-ribbon_alpha = st.sidebar.slider("Polygon Alpha", 40, 255,
-    st.session_state.get("ribbon_alpha", DEFAULTS["ribbon_alpha"]), 5, key="ribbon_alpha")
+st.sidebar.header("3) Crystal Engine")
 
-# 多边形大小/边数
-st.sidebar.subheader("Polygon Size & Sides")
-poly_min_size = st.sidebar.slider("Min Size (px)", 20, 300,
-    st.session_state.get("poly_min_size", DEFAULTS["poly_min_size"]), 5, key="poly_min_size")
-poly_max_size = st.sidebar.slider("Max Size (px)", 60, 600,
-    st.session_state.get("poly_max_size", DEFAULTS["poly_max_size"]), 5, key="poly_max_size")
-poly_sides_min = st.sidebar.slider("Min Sides", 3, 10,
-    st.session_state.get("poly_sides_min", DEFAULTS["poly_sides_min"]), 1, key="poly_sides_min")
-poly_sides_max = st.sidebar.slider("Max Sides", 4, 12,
-    st.session_state.get("poly_sides_max", DEFAULTS["poly_sides_max"]), 1, key="poly_sides_max")
+ribbons_per_emotion = st.sidebar.slider(
+    "Crystals per Emotion",
+    1, 40,
+    st.session_state.get("ribbons_per_emotion", DEFAULTS["ribbons_per_emotion"])
+)
 
-# 背景（仅自定义颜色）
+stroke_blur = st.sidebar.slider(
+    "Crystal Softness (blur px)",
+    0.0, 20.0,
+    st.session_state.get("stroke_blur", DEFAULTS["stroke_blur"])
+)
+
+ribbon_alpha = st.sidebar.slider(
+    "Crystal Alpha",
+    40, 255,
+    st.session_state.get("ribbon_alpha", DEFAULTS["ribbon_alpha"])
+)
+
+# Crystal size range
+st.sidebar.subheader("Crystal Size")
+poly_min_size = st.sidebar.slider(
+    "Min Size (px)",
+    20, 300,
+    st.session_state.get("poly_min_size", DEFAULTS["poly_min_size"])
+)
+
+poly_max_size = st.sidebar.slider(
+    "Max Size (px)",
+    60, 600,
+    st.session_state.get("poly_max_size", DEFAULTS["poly_max_size"])
+)
+
+# =========================
+# Sidebar — Background Color
+# =========================
 st.sidebar.subheader("Background (Solid Color)")
+
 def _hex_to_rgb(hex_str):
     hex_str = hex_str.lstrip("#")
     return tuple(int(hex_str[i:i+2], 16) for i in (0,2,4))
-bg_custom = st.sidebar.color_picker("Pick custom color", value=st.session_state.get("bg_custom", DEFAULTS["bg_custom"]), key="bg_custom")
+
+bg_custom = st.sidebar.color_picker(
+    "Choose Background",
+    value=st.session_state.get("bg_custom", DEFAULTS["bg_custom"])
+)
+
 bg_rgb = _hex_to_rgb(bg_custom)
 
 # =========================
 # Sidebar — Cinematic Color System
 # =========================
-st.sidebar.header("4) Cinematic Color System")
-exp = st.sidebar.slider("Exposure (stops)", -0.2, 1.8, st.session_state.get("exp", DEFAULTS["exp"]), 0.01, key="exp")
-contrast = st.sidebar.slider("Contrast", 0.70, 1.80, st.session_state.get("contrast", DEFAULTS["contrast"]), 0.01, key="contrast")
-saturation = st.sidebar.slider("Saturation", 0.70, 1.90, st.session_state.get("saturation", DEFAULTS["saturation"]), 0.01, key="saturation")
-gamma_val = st.sidebar.slider("Gamma", 0.70, 1.40, st.session_state.get("gamma_val", DEFAULTS["gamma_val"]), 0.01, key="gamma_val")
-roll = st.sidebar.slider("Highlight Roll-off", 0.00, 1.50, st.session_state.get("roll", DEFAULTS["roll"]), 0.01, key="roll")
+st.sidebar.header("4) Cinematic Color")
 
+exp = st.sidebar.slider(
+    "Exposure (stops)",
+    -0.2, 1.8,
+    st.session_state.get("exp", DEFAULTS["exp"]),
+    0.01
+)
+
+contrast = st.sidebar.slider(
+    "Contrast",
+    0.70, 1.80,
+    st.session_state.get("contrast", DEFAULTS["contrast"])
+)
+
+saturation = st.sidebar.slider(
+    "Saturation",
+    0.70, 1.90,
+    st.session_state.get("saturation", DEFAULTS["saturation"])
+)
+
+gamma_val = st.sidebar.slider(
+    "Gamma",
+    0.70, 1.40,
+    st.session_state.get("gamma_val", DEFAULTS["gamma_val"])
+)
+
+roll = st.sidebar.slider(
+    "Highlight Roll-off",
+    0.00, 1.50,
+    st.session_state.get("roll", DEFAULTS["roll"])
+)
+
+# ===== White Balance =====
 st.sidebar.subheader("White Balance")
-temp = st.sidebar.slider("Temperature (Blue ↔ Red)", -1.0, 1.0, st.session_state.get("temp", DEFAULTS["temp"]), 0.01, key="temp")
-tint = st.sidebar.slider("Tint (Green ↔ Magenta)", -1.0, 1.0, st.session_state.get("tint", DEFAULTS["tint"]), 0.01, key="tint")
 
+temp = st.sidebar.slider(
+    "Temperature (Blue ↔ Red)",
+    -1.0, 1.0,
+    st.session_state.get("temp", DEFAULTS["temp"])
+)
+
+tint = st.sidebar.slider(
+    "Tint (Green ↔ Magenta)",
+    -1.0, 1.0,
+    st.session_state.get("tint", DEFAULTS["tint"])
+)
+
+# ===== Split Toning =====
 st.sidebar.subheader("Split Toning")
-sh_r = st.sidebar.slider("Shadows R", 0.0, 1.0, st.session_state.get("sh_r", DEFAULTS["sh_r"]), 0.01, key="sh_r")
-sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, st.session_state.get("sh_g", DEFAULTS["sh_g"]), 0.01, key="sh_g")
-sh_b = st.sidebar.slider("Shadows B", 0.0, 1.0, st.session_state.get("sh_b", DEFAULTS["sh_b"]), 0.01, key="sh_b")
-hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, st.session_state.get("hi_r", DEFAULTS["hi_r"]), 0.01, key="hi_r")
-hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, st.session_state.get("hi_g", DEFAULTS["hi_g"]), 0.01, key="hi_g")
-hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, st.session_state.get("hi_b", DEFAULTS["hi_b"]), 0.01, key="hi_b")
-tone_balance = st.sidebar.slider("Tone Balance (Shadows ↔ Highlights)", -1.0, 1.0, st.session_state.get("tone_balance", DEFAULTS["tone_balance"]), 0.01, key="tone_balance")
 
+sh_r = st.sidebar.slider("Shadows R", 0.0, 1.0, st.session_state.get("sh_r", DEFAULTS["sh_r"]))
+sh_g = st.sidebar.slider("Shadows G", 0.0, 1.0, st.session_state.get("sh_g", DEFAULTS["sh_g"]))
+sh_b = st.sidebar.slider("Shadows B", 0.0, 1.0, st.session_state.get("sh_b", DEFAULTS["sh_b"]))
+
+hi_r = st.sidebar.slider("Highlights R", 0.0, 1.0, st.session_state.get("hi_r", DEFAULTS["hi_r"]))
+hi_g = st.sidebar.slider("Highlights G", 0.0, 1.0, st.session_state.get("hi_g", DEFAULTS["hi_g"]))
+hi_b = st.sidebar.slider("Highlights B", 0.0, 1.0, st.session_state.get("hi_b", DEFAULTS["hi_b"]))
+
+tone_balance = st.sidebar.slider(
+    "Tone Balance (Shadows ↔ Highlights)",
+    -1.0, 1.0,
+    st.session_state.get("tone_balance", DEFAULTS["tone_balance"])
+)
+
+# =========================
+# Sidebar — Bloom & Vignette
+# =========================
 st.sidebar.subheader("Bloom & Vignette")
-bloom_radius = st.sidebar.slider("Bloom Radius (px)", 0.0, 20.0, st.session_state.get("bloom_radius", DEFAULTS["bloom_radius"]), 0.5, key="bloom_radius")
-bloom_intensity = st.sidebar.slider("Bloom Intensity", 0.0, 1.0, st.session_state.get("bloom_intensity", DEFAULTS["bloom_intensity"]), 0.01, key="bloom_intensity")
-vignette_strength = st.sidebar.slider("Vignette Strength", 0.0, 0.8, st.session_state.get("vignette_strength", DEFAULTS["vignette_strength"]), 0.01, key="vignette_strength")
+
+bloom_radius = st.sidebar.slider(
+    "Bloom Radius (px)",
+    0.0, 20.0,
+    st.session_state.get("bloom_radius", DEFAULTS["bloom_radius"])
+)
+
+bloom_intensity = st.sidebar.slider(
+    "Bloom Intensity",
+    0.0, 1.0,
+    st.session_state.get("bloom_intensity", DEFAULTS["bloom_intensity"])
+)
+
+vignette_strength = st.sidebar.slider(
+    "Vignette Strength",
+    0.0, 0.8,
+    st.session_state.get("vignette_strength", DEFAULTS["vignette_strength"])
+)
 
 # =========================
 # Sidebar — Auto Brightness
 # =========================
 st.sidebar.header("5) Auto Brightness")
-auto_bright = st.sidebar.checkbox("Enable Auto Brightness", value=st.session_state.get("auto_bright", DEFAULTS["auto_bright"]), key="auto_bright")
-target_mean = st.sidebar.slider("Target Mean", 0.30, 0.70, st.session_state.get("target_mean", DEFAULTS["target_mean"]), 0.01, key="target_mean")
-abc_strength = st.sidebar.slider("Remap Strength", 0.0, 1.0, st.session_state.get("abc_strength", DEFAULTS["abc_strength"]), 0.05, key="abc_strength")
-abc_black = st.sidebar.slider("Black Point %", 0.00, 0.20, st.session_state.get("abc_black", DEFAULTS["abc_black"]), 0.01, key="abc_black")
-abc_white = st.sidebar.slider("White Point %", 0.80, 1.00, st.session_state.get("abc_white", DEFAULTS["abc_white"]), 0.001, key="abc_white")
-abc_max_gain = st.sidebar.slider("Max Gain", 1.0, 3.0, st.session_state.get("abc_max_gain", DEFAULTS["abc_max_gain"]), 0.05, key="abc_max_gain")
+
+auto_bright = st.sidebar.checkbox(
+    "Enable Auto Brightness",
+    value=st.session_state.get("auto_bright", DEFAULTS["auto_bright"])
+)
+
+target_mean = st.sidebar.slider(
+    "Target Mean",
+    0.30, 0.70,
+    st.session_state.get("target_mean", DEFAULTS["target_mean"])
+)
+
+abc_strength = st.sidebar.slider(
+    "Remap Strength",
+    0.0, 1.0,
+    st.session_state.get("abc_strength", DEFAULTS["abc_strength"])
+)
+
+abc_black = st.sidebar.slider(
+    "Black Point %",
+    0.00, 0.20,
+    st.session_state.get("abc_black", DEFAULTS["abc_black"])
+)
+
+abc_white = st.sidebar.slider(
+    "White Point %",
+    0.80, 1.00,
+    st.session_state.get("abc_white", DEFAULTS["abc_white"])
+)
+
+abc_max_gain = st.sidebar.slider(
+    "Max Gain",
+    1.0, 3.0,
+    st.session_state.get("abc_max_gain", DEFAULTS["abc_max_gain"])
+)
 
 # =========================
-# Sidebar — Palette (自定义/CSV)
+# Sidebar — Palette (CSV / Custom)
 # =========================
 st.sidebar.header("6) Custom Palette (RGB)")
-use_csv = st.sidebar.checkbox("Use CSV palette only", value=st.session_state.get("use_csv_palette", False), key="use_csv_palette")
+
+use_csv = st.sidebar.checkbox(
+    "Use CSV palette only",
+    value=st.session_state.get("use_csv_palette", False),
+    key="use_csv_palette"
+)
 
 with st.sidebar.expander("Add Custom Emotion", False):
-    col1,col2,col3,col4=st.columns([1.8,1,1,1])
-    name=col1.text_input("Emotion", key="add_emo")
-    r=col2.number_input("R",0,255,210, key="add_r")
-    g=col3.number_input("G",0,255,190, key="add_g")
-    b=col4.number_input("B",0,255,140, key="add_b")
-    if st.button("Add", key="btn_add"):
-        add_custom_emotion(name,r,g,b)
-    show = st.session_state.get("custom_palette",{})
-    if show:
-        st.dataframe(pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in show.items()]),
-                     use_container_width=True,height=150)
+    col1,col2,col3,col4 = st.columns([1.6,1,1,1])
+    emo_name = col1.text_input("Emotion Name")
+    r = col2.number_input("R",0,255,180)
+    g = col3.number_input("G",0,255,180)
+    b = col4.number_input("B",0,255,200)
+    if st.button("Add Color"):
+        add_custom_emotion(emo_name, r, g, b)
 
 with st.sidebar.expander("Import / Export Palette CSV", False):
-    up = st.file_uploader("Import CSV",type=["csv"], key="up_csv")
+    up = st.file_uploader("Import CSV", type=["csv"])
     if up is not None:
         import_palette_csv(up)
+
     pal = dict(DEFAULT_RGB)
     pal.update(st.session_state.get("custom_palette", {}))
     if st.session_state.get("use_csv_palette", False):
         pal = dict(st.session_state.get("custom_palette", {}))
+
     if pal:
-        st.dataframe(pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()]),
-                     use_container_width=True,height=160)
+        df_pal = pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()])
+        st.dataframe(df_pal, use_container_width=True)
         dl = export_palette_csv(pal)
-        st.download_button("Download CSV",data=dl,file_name="palette.csv",mime="text/csv", key="dl_csv")
+        st.download_button("Download CSV", data=dl, file_name="palette.csv", mime="text/csv")
 
 # =========================
-# Sidebar — Reset
+# Sidebar — Reset Button
 # =========================
-st.sidebar.header("7) Output")
+st.sidebar.header("7) Output Control")
+
 if st.sidebar.button("Reset All", type="primary"):
     reset_all()
+# ============================================================
+# Emotional Crystal — FULL VERSION (Part 5 / 6)
+# Main Rendering + Cinematic Post-processing + Download
+# ============================================================
+
+left, right = st.columns([0.60, 0.40])
 
 # =========================
-# DRAW
+# Left Column: Crystal Image
 # =========================
-left, right = st.columns([0.60,0.40])
-
 with left:
-    st.subheader("🎐 Polygon Mix (Colorful)")
+    st.subheader("❄️ Crystal Mix Visualization")
 
     working_palette = get_active_palette()
 
-    # 多边形合成渲染（复用“ribbons_per_emotion”等值）
-    img = render_polymix(
-        df=df, palette=working_palette,
-        width=1500, height=850, seed=np.random.randint(0, 999999),
+    # ❄️ Crystal Mix Render
+    img = render_crystalmix(
+        df=df,
+        palette=working_palette,
+        width=1500,
+        height=850,
+        seed=np.random.randint(0, 999999),
         shapes_per_emotion=ribbons_per_emotion,
-        min_size=poly_min_size, max_size=poly_max_size,
-        shape_sides_min=poly_sides_min, shape_sides_max=poly_sides_max,
-        fill_alpha=int(ribbon_alpha), blur_px=int(stroke_blur),
+        min_size=poly_min_size,
+        max_size=poly_max_size,
+        fill_alpha=int(ribbon_alpha),
+        blur_px=int(stroke_blur),
         bg_color=bg_rgb
     )
 
-    # 电影级后期
+    # Convert to array
     arr = np.array(img).astype(np.float32)/255.0
     lin = srgb_to_linear(arr)
+
+    # ===== EXPOSURE =====
     lin = lin * (2.0 ** exp)
+
+    # ===== WHITE BALANCE =====
     lin = apply_white_balance(lin, temp, tint)
+
+    # ===== HIGHLIGHT ROLL-OFF =====
     lin = highlight_rolloff(lin, roll)
+
+    # Back to sRGB
     arr = linear_to_srgb(np.clip(lin, 0, 4))
-    arr = np.clip(filmic_tonemap(arr*1.20), 0, 1)
+
+    # ===== FILMIC CURVE =====
+    arr = np.clip(filmic_tonemap(arr * 1.20), 0, 1)
+
+    # ===== CONTRAST / SATURATION / GAMMA =====
     arr = adjust_contrast(arr, contrast)
     arr = adjust_saturation(arr, saturation)
     arr = gamma_correct(arr, gamma_val)
-    arr = split_tone(arr, (st.session_state.get("sh_r", DEFAULTS["sh_r"]),
-                           st.session_state.get("sh_g", DEFAULTS["sh_g"]),
-                           st.session_state.get("sh_b", DEFAULTS["sh_b"])),
-                          (st.session_state.get("hi_r", DEFAULTS["hi_r"]),
-                           st.session_state.get("hi_g", DEFAULTS["hi_g"]),
-                           st.session_state.get("hi_b", DEFAULTS["hi_b"])),
-                           st.session_state.get("tone_balance", DEFAULTS["tone_balance"]))
 
+    # ===== SPLIT TONING =====
+    arr = split_tone(
+        arr,
+        sh_rgb=(sh_r, sh_g, sh_b),
+        hi_rgb=(hi_r, hi_g, hi_b),
+        balance=tone_balance
+    )
+
+    # ===== AUTO BRIGHTNESS =====
     if auto_bright:
         arr = auto_brightness_compensation(
             arr,
@@ -746,23 +867,137 @@ with left:
             white_point_pct=abc_white,
             max_gain=abc_max_gain
         )
+
+    # ===== BLOOM & VIGNETTE =====
     arr = apply_bloom(arr, radius=bloom_radius, intensity=bloom_intensity)
     arr = apply_vignette(arr, strength=vignette_strength)
+
+    # ===== Ensure Colorfulness =====
     arr = ensure_colorfulness(arr, min_sat=0.16, boost=1.18)
 
-    final_img = Image.fromarray((np.clip(arr,0,1)*255).astype(np.uint8), mode="RGB")
-    buf=BytesIO(); final_img.save(buf, format="PNG"); buf.seek(0)
-    st.image(buf,use_column_width=True)
-    st.download_button("💾 Download PNG",data=buf,file_name="emotion_polymix.png",mime="image/png")
+    # Convert to image
+    final_img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8), mode="RGB")
+    buf = BytesIO()
+    final_img.save(buf, format="PNG")
+    buf.seek(0)
 
+    st.image(buf, use_column_width=True)
+    st.download_button(
+        "💾 Download PNG",
+        data=buf,
+        file_name="crystal_mix.png",
+        mime="image/png"
+    )
+
+# =========================
+# Right Column: Data Table
+# =========================
 with right:
-    st.subheader("📊 Data & Emotion")
-    df2=df.copy()
-    df2["emotion_display"]=df2["emotion"].apply(lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})")
-    cols=["text","emotion_display","compound","pos","neu","neg"]
-    if "timestamp" in df.columns: cols.insert(1,"timestamp")
-    if "source" in df.columns: cols.insert(2,"source")
-    st.dataframe(df2[cols],use_container_width=True,height=600)
+    st.subheader("📊 Data & Emotion Mapping")
+    df2 = df.copy()
+    df2["emotion_display"] = df2["emotion"].apply(lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})")
 
-st.markdown("---")
-st.caption("© 2025 Emotional Ribbon — Colorful Polygon Mix Edition")
+    cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
+    if "timestamp" in df.columns:
+        cols.insert(1, "timestamp")
+    if "source" in df.columns:
+        cols.insert(2, "source")
+
+    st.dataframe(df2[cols], use_container_width=True, height=600)
+# ============================================================
+# Emotional Crystal — FULL VERSION (Part 6 / 6)
+# Utility functions (CSV Import/Export, Text)
+# ============================================================
+
+# =========================
+# CSV Palette Import
+# =========================
+def import_palette_csv(file):
+    try:
+        dfc = pd.read_csv(file)
+
+        expected = {"emotion","r","g","b"}
+        lower_cols = {c.lower(): c for c in dfc.columns}
+
+        if not expected.issubset(lower_cols.keys()):
+            st.error("CSV must contain emotion, r, g, b columns.")
+            return
+
+        pal = {}
+        for _, row in dfc.iterrows():
+            emo = str(row[lower_cols["emotion"]]).strip()
+            try:
+                r = int(row[lower_cols["r"]])
+                g = int(row[lower_cols["g"]])
+                b = int(row[lower_cols["b"]])
+            except:
+                continue
+
+            pal[emo] = (r, g, b)
+
+        st.session_state["custom_palette"] = pal
+        st.success(f"Imported {len(pal)} colors from CSV.")
+
+    except Exception as e:
+        st.error(f"CSV import error: {e}")
+
+# =========================
+# CSV Palette Export
+# =========================
+def export_palette_csv(pal):
+    buf = BytesIO()
+    df_out = pd.DataFrame([
+        {"emotion": k, "r": v[0], "g": v[1], "b": v[2]}
+        for k, v in pal.items()
+    ])
+    df_out.to_csv(buf, index=False)
+    buf.seek(0)
+    return buf
+
+# =========================
+# Safe Text Bounding Box
+# =========================
+def safe_text_bbox(draw, text, font):
+    # Pillow 10+ uses textbbox
+    try:
+        bbox = draw.textbbox((0,0), text, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        return w, h
+    except:
+        # older fallback
+        try:
+            w, h = draw.textsize(text, font=font)
+            return w, h
+        except:
+            return 0, 0
+
+# =========================
+# Title Overlay (Optional)
+# =========================
+def add_title(img_rgb, title, color_rgb=(255,255,255)):
+    W, H = img_rgb.size
+    rgba = img_rgb.convert("RGBA")
+    overlay = Image.new("RGBA", (W,H), (0,0,0,0))
+    d = ImageDraw.Draw(overlay, "RGBA")
+
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", size=int(H*0.06))
+    except:
+        font = ImageFont.load_default()
+
+    tw, th = safe_text_bbox(d, title, font)
+    pad = int(H*0.02)
+    x, y = pad, pad
+
+    # Semi-transparent bar
+    bg_rect = [x-10, y-6, x + tw + 16, y + th + 10]
+    d.rectangle(bg_rect, fill=(0,0,0,140), outline=None)
+    d.text((x,y), title, font=font, fill=(color_rgb[0], color_rgb[1], color_rgb[2], 255))
+
+    rgba.alpha_composite(overlay)
+    return rgba.convert("RGB")
+
+# ============================================================
+# END OF APP
+# ============================================================
