@@ -1008,43 +1008,49 @@ left, right = st.columns([0.60, 0.40])
 # Left Column: Crystal Image
 # =========================
 with left:
+
     st.subheader("❄️ Crystal Mix Visualization")
 
     working_palette = get_active_palette()
 
     # ❄️ Crystal Mix Render
     img = render_crystalmix(
-    df=df,
-    palette=working_palette,
-    width=1500,
-    height=850,
-    seed=seed_control,              # ← controlled seed
-    shapes_per_emotion=ribbons_per_emotion,
-    min_size=poly_min_size,
-    max_size=poly_max_size,
-    fill_alpha=int(ribbon_alpha),
-    blur_px=int(stroke_blur),
-    bg_color=bg_rgb,
-    wobble=wobble_control,          # ← new wobble
-    layers=layer_count              # ← new layer count
-)
+        df=df,
+        palette=working_palette,
+        width=1500,
+        height=850,
+        seed=seed_control,              # ← controlled seed
+        shapes_per_emotion=ribbons_per_emotion,
+        min_size=poly_min_size,
+        max_size=poly_max_size,
+        fill_alpha=int(ribbon_alpha),
+        blur_px=int(stroke_blur),
+        bg_color=bg_rgb,
+        wobble=wobble_control,          # ← new wobble
+        layers=layer_count              # ← new layer count
+    )
 
-# Convert to array  ← 注意：这里必须顶格
-arr = np.array(img).astype(np.float32)/255.0
-lin = srgb_to_linear(arr)
+    # ==========================================
+    # Convert PIL → NumPy
+    # ==========================================
+    arr = np.array(img).astype(np.float32) / 255.0
 
-# ===== EXPOSURE =====
-lin = lin * (2.0 ** exp)
+    # Linear space
+    lin = srgb_to_linear(arr)
 
-# ===== WHITE BALANCE =====
-lin = apply_white_balance(lin, temp, tint)
+    # ===== EXPOSURE =====
+    lin = lin * (2.0 ** exp)
 
-# ===== HIGHLIGHT ROLL-OFF =====
-lin = highlight_rolloff(lin, roll)
+    # ===== WHITE BALANCE =====
+    lin = apply_white_balance(lin, temp, tint)
 
-# Back to sRGB
-arr = linear_to_srgb(np.clip(lin, 0, 4))
-# ===== FILMIC CURVE =====
+    # ===== HIGHLIGHT ROLL-OFF =====
+    lin = highlight_rolloff(lin, roll)
+
+    # Back to sRGB
+    arr = linear_to_srgb(np.clip(lin, 0, 4))
+
+    # ===== FILMIC CURVE =====
     arr = np.clip(filmic_tonemap(arr * 1.20), 0, 1)
 
     # ===== CONTRAST / SATURATION / GAMMA =====
@@ -1078,12 +1084,13 @@ arr = linear_to_srgb(np.clip(lin, 0, 4))
     # ===== Ensure Colorfulness =====
     arr = ensure_colorfulness(arr, min_sat=0.16, boost=1.18)
 
-    # Convert to image
+    # Convert back to PIL
     final_img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8), mode="RGB")
     buf = BytesIO()
     final_img.save(buf, format="PNG")
     buf.seek(0)
 
+    # Display + Download
     st.image(buf, use_column_width=True)
     st.download_button(
         "💾 Download PNG",
@@ -1092,13 +1099,18 @@ arr = linear_to_srgb(np.clip(lin, 0, 4))
         mime="image/png"
     )
 
+
 # =========================
 # Right Column: Data Table
 # =========================
 with right:
+
     st.subheader("📊 Data & Emotion Mapping")
+
     df2 = df.copy()
-    df2["emotion_display"] = df2["emotion"].apply(lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})")
+    df2["emotion_display"] = df2["emotion"].apply(
+        lambda e: f"{e} ({COLOR_NAMES.get(e, 'Custom')})"
+    )
 
     cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
     if "timestamp" in df.columns:
@@ -1107,7 +1119,8 @@ with right:
         cols.insert(2, "source")
 
     st.dataframe(df2[cols], use_container_width=True, height=600)
- 
+
 # ============================================================
-# END OF APP
+# END OF APP (Part 5)
 # ============================================================
+
