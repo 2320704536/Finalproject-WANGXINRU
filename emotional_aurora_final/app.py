@@ -1013,7 +1013,7 @@ with left:
     working_palette = get_active_palette()
 
     # ❄️ Crystal Mix Render
-img = render_crystalmix(
+    img = render_crystalmix(
     df=df,
     palette=working_palette,
     width=1500,
@@ -1028,21 +1028,23 @@ img = render_crystalmix(
     wobble=wobble_control,          # ← new wobble
     layers=layer_count              # ← new layer count
 )
-    # Convert to array
-    arr = np.array(img).astype(np.float32)/255.0
-    lin = srgb_to_linear(arr)
 
-    # ===== EXPOSURE =====
-    lin = lin * (2.0 ** exp)
+# Convert to array  ← 注意：这里必须顶格
+arr = np.array(img).astype(np.float32)/255.0
+lin = srgb_to_linear(arr)
 
-    # ===== WHITE BALANCE =====
-    lin = apply_white_balance(lin, temp, tint)
+# ===== EXPOSURE =====
+lin = lin * (2.0 ** exp)
 
-    # ===== HIGHLIGHT ROLL-OFF =====
-    lin = highlight_rolloff(lin, roll)
+# ===== WHITE BALANCE =====
+lin = apply_white_balance(lin, temp, tint)
 
-    # Back to sRGB
-    arr = linear_to_srgb(np.clip(lin, 0, 4))
+# ===== HIGHLIGHT ROLL-OFF =====
+lin = highlight_rolloff(lin, roll)
+
+# Back to sRGB
+arr = linear_to_srgb(np.clip(lin, 0, 4))
+
 
     # ===== FILMIC CURVE =====
     arr = np.clip(filmic_tonemap(arr * 1.20), 0, 1)
