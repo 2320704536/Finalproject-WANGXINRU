@@ -269,6 +269,8 @@ def render_crystalmix(
     min_size=60, max_size=220,
     fill_alpha=210, blur_px=6,
     bg_color=(0,0,0),
+    wobble=0.25,            # ← NEW
+    layers=10               # ← NEW
 ):
     rng = np.random.default_rng(seed)
     base = Image.new("RGBA", (width, height), (bg_color[0], bg_color[1], bg_color[2], 255))
@@ -278,37 +280,45 @@ def render_crystalmix(
     if not emotions:
         emotions = ["joy","love","curiosity"]
 
-    for emo in emotions:
-        base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
-        base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
+    # NEW: layers multiplier
+    total_layers = layers
 
-        for _ in range(max(1, int(shapes_per_emotion))):
-            cx = rng.uniform(0.05*width, 0.95*width)
-            cy = rng.uniform(0.08*height, 0.92*height)
+    for _layer in range(total_layers):        # ← loop more layers
+        for emo in emotions:
 
-            rr = int(rng.uniform(min_size, max_size))
+            base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
+            base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
 
-            pts = crystal_shape(
-                center=(cx,cy),
-                r=rr,
-                wobble=0.25,
-                sides_min=5,
-                sides_max=10,
-                rng=rng
-            )
+            for _ in range(max(1, int(shapes_per_emotion))):
+                cx = rng.uniform(0.05*width, 0.95*width)
+                cy = rng.uniform(0.08*height, 0.92*height)
 
-            col01 = jitter_color(base01, rng, amount=0.07)
-            local_alpha = int(np.clip(fill_alpha * rng.uniform(0.85, 1.05), 40, 255))
-            local_blur = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
-            edge_w = 0 if rng.random() < 0.6 else max(1, int(rr*0.02))
+                rr = int(rng.uniform(min_size, max_size))
 
-            draw_polygon_soft(canvas, pts, col01,
-                fill_alpha=local_alpha,
-                blur_px=local_blur,
-                edge_width=edge_w)
+                pts = crystal_shape(
+                    center=(cx,cy),
+                    r=rr,
+                    wobble=wobble,          # ← NEW wobble strength
+                    sides_min=5,
+                    sides_max=10,
+                    rng=rng
+                )
+
+                col01 = jitter_color(base01, rng, amount=0.07)
+                local_alpha = int(np.clip(fill_alpha * rng.uniform(0.85, 1.05), 40, 255))
+                local_blur = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
+                edge_w = 0 if rng.random() < 0.6 else max(1, int(rr*0.02))
+
+                draw_polygon_soft(
+                    canvas, pts, col01,
+                    fill_alpha=local_alpha,
+                    blur_px=local_blur,
+                    edge_width=edge_w
+                )
 
     base.alpha_composite(canvas)
     return base.convert("RGB")
+
 
 # =========================
 # Cinematic Color System
@@ -730,6 +740,31 @@ selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 df = df[(df["emotion"].isin(selected_emotions))
         & (df["compound"] >= cmp_min)
         & (df["compound"] <= cmp_max)]
+# Additional Crystal Controls
+st.sidebar.subheader("Crystal Layer Controls")
+
+layer_count = st.sidebar.slider(
+    "Layers",
+    1, 30,
+    10,
+    help="Controls how many layers of crystal fragments are rendered overall."
+)
+
+wobble_control = st.sidebar.slider(
+    "Wobble (Crystal Randomness)",
+    0.00, 1.00,
+    0.25,
+    step=0.01,
+    help="Controls the irregularity of the crystal shape. Higher values → more chaotic fragments."
+)
+
+seed_control = st.sidebar.slider(
+    "Seed",
+    0, 999999,
+    12345,
+    help="Random seed for reproducible crystal patterns."
+)
+
 # ============================================================
 # Emotional Crystal — FULL VERSION (Part 4 / 6)
 # Crystal Engine Sidebar + Cinematic Color Controls
@@ -978,19 +1013,23 @@ with left:
     working_palette = get_active_palette()
 
     # ❄️ Crystal Mix Render
-    img = render_crystalmix(
-        df=df,
-        palette=working_palette,
-        width=1500,
-        height=850,
-        seed=np.random.randint(0, 999999),
-        shapes_per_emotion=ribbons_per_emotion,
-        min_size=poly_min_size,
-        max_size=poly_max_size,
-        fill_alpha=int(ribbon_alpha),
-        blur_px=int(stroke_blur),
-        bg_color=bg_rgb
-    )
+img = render_crystalmix(
+    df=df,
+    palette=working_palette,
+    width=1500,
+    height=850,
+    seed=seed_control,              # ← controlled seed
+    shapes_per_emotion=ribbons_per_emotion,
+    min_size=poly_min_size,
+    max_size=poly_max_size,
+    fill_alpha=int(ribbon_alpha),
+    blur_px=int(stroke_blur),
+    bg_color=bg_rgb,
+    wobble=wobble_control,          # ← new wobble
+    layers=layer_count              # ← new layer count
+)
+
+
 
     # Convert to array
     arr = np.array(img).astype(np.float32)/255.0
