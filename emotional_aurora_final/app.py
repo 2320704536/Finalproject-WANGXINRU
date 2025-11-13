@@ -384,6 +384,105 @@ def auto_brightness_compensation(img_arr, target_mean=0.50, strength=0.9,
     out = np.clip(out, 0, 1)
     out = linear_to_srgb(out)
     return np.clip(out, 0, 1)
+
+# ============================================================
+# Emotional Crystal — FULL VERSION (Part 6 / 6)
+# Utility functions (CSV Import/Export, Text)
+# ============================================================
+
+# =========================
+# CSV Palette Import
+# =========================
+def import_palette_csv(file):
+    try:
+        dfc = pd.read_csv(file)
+
+        expected = {"emotion","r","g","b"}
+        lower_cols = {c.lower(): c for c in dfc.columns}
+
+        if not expected.issubset(lower_cols.keys()):
+            st.error("CSV must contain emotion, r, g, b columns.")
+            return
+
+        pal = {}
+        for _, row in dfc.iterrows():
+            emo = str(row[lower_cols["emotion"]]).strip()
+            try:
+                r = int(row[lower_cols["r"]])
+                g = int(row[lower_cols["g"]])
+                b = int(row[lower_cols["b"]])
+            except:
+                continue
+
+            pal[emo] = (r, g, b)
+
+        st.session_state["custom_palette"] = pal
+        st.success(f"Imported {len(pal)} colors from CSV.")
+
+    except Exception as e:
+        st.error(f"CSV import error: {e}")
+
+# =========================
+# CSV Palette Export
+# =========================
+def export_palette_csv(pal):
+    buf = BytesIO()
+    df_out = pd.DataFrame([
+        {"emotion": k, "r": v[0], "g": v[1], "b": v[2]}
+        for k, v in pal.items()
+    ])
+    df_out.to_csv(buf, index=False)
+    buf.seek(0)
+    return buf
+
+# =========================
+# Safe Text Bounding Box
+# =========================
+def safe_text_bbox(draw, text, font):
+    # Pillow 10+ uses textbbox
+    try:
+        bbox = draw.textbbox((0,0), text, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        return w, h
+    except:
+        # older fallback
+        try:
+            w, h = draw.textsize(text, font=font)
+            return w, h
+        except:
+            return 0, 0
+
+# =========================
+# Title Overlay (Optional)
+# =========================
+def add_title(img_rgb, title, color_rgb=(255,255,255)):
+    W, H = img_rgb.size
+    rgba = img_rgb.convert("RGBA")
+    overlay = Image.new("RGBA", (W,H), (0,0,0,0))
+    d = ImageDraw.Draw(overlay, "RGBA")
+
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", size=int(H*0.06))
+    except:
+        font = ImageFont.load_default()
+
+    tw, th = safe_text_bbox(d, title, font)
+    pad = int(H*0.02)
+    x, y = pad, pad
+
+    # Semi-transparent bar
+    bg_rect = [x-10, y-6, x + tw + 16, y + th + 10]
+    d.rectangle(bg_rect, fill=(0,0,0,140), outline=None)
+    d.text((x,y), title, font=font, fill=(color_rgb[0], color_rgb[1], color_rgb[2], 255))
+
+    rgba.alpha_composite(overlay)
+    return rgba.convert("RGB")
+
+# ============================================================
+# END OF APP
+# ============================================================
+
 # ============================================================
 # Emotional Crystal — FULL VERSION (Part 3 / 6)
 # Sidebar UI + Data Loading (Keyword & Random Generate)
@@ -904,100 +1003,7 @@ with right:
         cols.insert(2, "source")
 
     st.dataframe(df2[cols], use_container_width=True, height=600)
-# ============================================================
-# Emotional Crystal — FULL VERSION (Part 6 / 6)
-# Utility functions (CSV Import/Export, Text)
-# ============================================================
-
-# =========================
-# CSV Palette Import
-# =========================
-def import_palette_csv(file):
-    try:
-        dfc = pd.read_csv(file)
-
-        expected = {"emotion","r","g","b"}
-        lower_cols = {c.lower(): c for c in dfc.columns}
-
-        if not expected.issubset(lower_cols.keys()):
-            st.error("CSV must contain emotion, r, g, b columns.")
-            return
-
-        pal = {}
-        for _, row in dfc.iterrows():
-            emo = str(row[lower_cols["emotion"]]).strip()
-            try:
-                r = int(row[lower_cols["r"]])
-                g = int(row[lower_cols["g"]])
-                b = int(row[lower_cols["b"]])
-            except:
-                continue
-
-            pal[emo] = (r, g, b)
-
-        st.session_state["custom_palette"] = pal
-        st.success(f"Imported {len(pal)} colors from CSV.")
-
-    except Exception as e:
-        st.error(f"CSV import error: {e}")
-
-# =========================
-# CSV Palette Export
-# =========================
-def export_palette_csv(pal):
-    buf = BytesIO()
-    df_out = pd.DataFrame([
-        {"emotion": k, "r": v[0], "g": v[1], "b": v[2]}
-        for k, v in pal.items()
-    ])
-    df_out.to_csv(buf, index=False)
-    buf.seek(0)
-    return buf
-
-# =========================
-# Safe Text Bounding Box
-# =========================
-def safe_text_bbox(draw, text, font):
-    # Pillow 10+ uses textbbox
-    try:
-        bbox = draw.textbbox((0,0), text, font=font)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        return w, h
-    except:
-        # older fallback
-        try:
-            w, h = draw.textsize(text, font=font)
-            return w, h
-        except:
-            return 0, 0
-
-# =========================
-# Title Overlay (Optional)
-# =========================
-def add_title(img_rgb, title, color_rgb=(255,255,255)):
-    W, H = img_rgb.size
-    rgba = img_rgb.convert("RGBA")
-    overlay = Image.new("RGBA", (W,H), (0,0,0,0))
-    d = ImageDraw.Draw(overlay, "RGBA")
-
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", size=int(H*0.06))
-    except:
-        font = ImageFont.load_default()
-
-    tw, th = safe_text_bbox(d, title, font)
-    pad = int(H*0.02)
-    x, y = pad, pad
-
-    # Semi-transparent bar
-    bg_rect = [x-10, y-6, x + tw + 16, y + th + 10]
-    d.rectangle(bg_rect, fill=(0,0,0,140), outline=None)
-    d.text((x,y), title, font=font, fill=(color_rgb[0], color_rgb[1], color_rgb[2], 255))
-
-    rgba.alpha_composite(overlay)
-    return rgba.convert("RGB")
-
+ 
 # ============================================================
 # END OF APP
 # ============================================================
