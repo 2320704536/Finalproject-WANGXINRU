@@ -16,7 +16,7 @@ import math
 # App setup
 # =========================
 st.set_page_config(page_title="Emotional Crystal — Final", page_icon="❄️", layout="wide")
-st.title("❄️ Emotional Crystal — Final (Ice Crystal Visualization)")
+st.title("❄️ Emotional Crystal — Final")
 # Instructions section
 with st.expander("Instructions", expanded=False):
     st.markdown("""
