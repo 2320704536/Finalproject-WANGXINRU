@@ -977,86 +977,31 @@ abc_max_gain = st.sidebar.slider(
 # =========================
 st.sidebar.header("6) Custom Palette (RGB)")
 
+# CSV palette only toggle
 use_csv = st.sidebar.checkbox(
     "Use CSV palette only",
     value=st.session_state.get("use_csv_palette", False),
     key="use_csv_palette"
 )
 
-with st.sidebar.expander("Add Custom Emotion", False):
-
-    # --- Add Color (always allowed in CSV-only mode) ---
-    col1, col2, col3, col4 = st.columns([1.6, 1, 1, 1])
-    emo_name = col1.text_input("Emotion Name")
-    r = col2.number_input("R", 0, 255, 180)
-    g = col3.number_input("G", 0, 255, 180)
-    b = col4.number_input("B", 0, 255, 200)
-
-    if st.button("Add Color"):
-        add_custom_emotion(emo_name, r, g, b)
-
-    # -------------------------
-    # FILTER: Remove all crystal_xxx
-    # -------------------------
-    palette_mode_csv_only = st.session_state.get("use_csv_palette", False)
-
-    # 默认逻辑：只使用 custom_palette
-    # CSV-only 模式：也只用 custom_palette
-    custom_pal = {
-        k: v for k, v in st.session_state.get("custom_palette", {}).items()
-        if not k.startswith("crystal_")
-    }
-
-    if custom_pal:
-        st.markdown("### Current Palette")
-
-        # Delete option
-        to_delete = st.multiselect(
-            "Select emotions to delete",
-            options=list(custom_pal.keys()),
-            format_func=lambda e: f"{e}  RGB{custom_pal[e]}",
-            key="delete_custom_colors"
-        )
-
-        if st.button("Delete Selected"):
-            for emo in to_delete:
-                st.session_state["custom_palette"].pop(emo, None)
-            st.experimental_rerun()
-
-        # Preview each color
-        for emo, (rr, gg, bb) in custom_pal.items():
-            colA, colB = st.columns([0.45, 0.55])
-            with colA:
-                st.markdown(f"**{emo}**\nRGB: ({rr}, {gg}, {bb})")
-            with colB:
-                st.color_picker(
-                    label=f"Preview {emo}",
-                    value=f"#{rr:02x}{gg:02x}{bb:02x}",
-                    key=f"{emo}_preview",
-                    disabled=True
-                )
-    else:
-        st.markdown("*No custom colors yet.*")
-
-
-
-
-
-with st.sidebar.expander("Import / Export Palette CSV", False):
+with st.sidebar.expander("Import / Export Palette CSV", True):
     up = st.file_uploader("Import CSV", type=["csv"])
     if up is not None:
         import_palette_csv(up)
 
-    pal = dict(DEFAULT_RGB)
-    pal.update(st.session_state.get("custom_palette", {}))
-    if st.session_state.get("use_csv_palette", False):
-        pal = dict(st.session_state.get("custom_palette", {}))
+    # palette = ONLY custom_palette when CSV mode is enabled
+    pal = dict(st.session_state.get("custom_palette", {}))
 
     if pal:
-        df_pal = pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()])
+        df_pal = pd.DataFrame([
+            {"emotion":k, "r":v[0], "g":v[1], "b":v[2]} for k,v in pal.items()
+        ])
         st.dataframe(df_pal, use_container_width=True)
+
         dl = export_palette_csv(pal)
         st.download_button("Download CSV", data=dl, file_name="palette.csv", mime="text/csv")
+    else:
+        st.info("No palette loaded. Please import a CSV.")
 
 # =========================
 # Sidebar — Reset Button
