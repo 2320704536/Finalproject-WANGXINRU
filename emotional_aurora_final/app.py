@@ -620,6 +620,9 @@ df = pd.DataFrame()
 
 # ❄️ RANDOM MODE：文本随机 + 颜色随机 + emotion = crystal_xxx
 if random_btn:
+    # 自动更新 seed（NEW）
+    st.session_state["auto_seed"] = int(np.random.randint(0, 1000000))
+
     rng = np.random.default_rng()
     
     num_items = 12
@@ -639,8 +642,7 @@ if random_btn:
         g = int(rng.integers(0, 256))
         b = int(rng.integers(0, 256))
 
-        # 完全随机颜色
-        st.session_state["custom_palette"][emo] = (r,g,b)
+        st.session_state["custom_palette"][emo] = (r, g, b)
 
     df = pd.DataFrame({
         "text": texts,
@@ -651,13 +653,18 @@ if random_btn:
         "source": "CrystalGen"
     })
 
+
 # 🔍 FETCH NEWS MODE
 elif fetch_btn:
+    # 自动更新 seed（NEW）
+    st.session_state["auto_seed"] = int(np.random.randint(0, 1000000))
+
     key = st.secrets.get("NEWS_API_KEY","")
     if not key:
         st.sidebar.error("Missing NEWS_API_KEY in Secrets")
     else:
         df = fetch_news(key, keyword if keyword.strip() else "aurora")
+
 
 # 🌈 DEFAULT DEMO TEXTS
 if df.empty:
@@ -726,6 +733,13 @@ selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 df = df[(df["emotion"].isin(selected_emotions))
         & (df["compound"] >= cmp_min)
         & (df["compound"] <= cmp_max)]
+
+# =========================
+# Auto Seed Init (NEW)
+# =========================
+if "auto_seed" not in st.session_state:
+    st.session_state["auto_seed"] = 25
+
 # Additional Crystal Controls
 st.sidebar.subheader("Crystal Layer Controls")
 
@@ -747,7 +761,7 @@ wobble_control = st.sidebar.slider(
 seed_control = st.sidebar.slider(
     "Seed",
     0, 500,
-    25,
+    st.session_state.get("auto_seed", 25),
     help="Random seed for reproducible crystal patterns."
 )
 
