@@ -235,10 +235,6 @@ def draw_polygon_soft(canvas_rgba, pts, color01, fill_alpha=200, blur_px=6, edge
         layer = layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
 
     canvas_rgba.alpha_composite(layer)
-# ============================================================
-# Emotional Crystal — FULL VERSION (Part 2 / 6)
-# Crystal Renderer & Cinematic Color Functions
-# ============================================================
 
 # =========================
 # Color helpers
@@ -465,10 +461,6 @@ def auto_brightness_compensation(img_arr, target_mean=0.50, strength=0.9,
     out = linear_to_srgb(out)
     return np.clip(out, 0, 1)
 
-# ============================================================
-# Emotional Crystal — FULL VERSION (Part 6 / 6)
-# Utility functions (CSV Import/Export, Text)
-# ============================================================
 
 # =========================
 # CSV Palette Import
@@ -559,14 +551,6 @@ def add_title(img_rgb, title, color_rgb=(255,255,255)):
     rgba.alpha_composite(overlay)
     return rgba.convert("RGB")
 
-# ============================================================
-# END OF APP
-# ============================================================
-
-# ============================================================
-# Emotional Crystal — FULL VERSION (Part 3 / 6)
-# Sidebar UI + Data Loading (Keyword & Random Generate)
-# ============================================================
 
 # =========================
 # Defaults & Reset
@@ -767,10 +751,6 @@ seed_control = st.sidebar.slider(
     help="Random seed for reproducible crystal patterns."
 )
 
-# ============================================================
-# Emotional Crystal — FULL VERSION (Part 4 / 6)
-# Crystal Engine Sidebar + Cinematic Color Controls
-# ============================================================
 
 # =========================
 # Sidebar — Crystal Engine
@@ -999,10 +979,7 @@ st.sidebar.header("7) Output Control")
 
 if st.sidebar.button("Reset All", type="primary"):
     reset_all()
-# ============================================================
-# Emotional Crystal — FULL VERSION (Part 5 / 6)
-# Main Rendering + Cinematic Post-processing + Download
-# ============================================================
+
 
 left, right = st.columns([0.60, 0.40])
 
@@ -1122,7 +1099,5 @@ with right:
 
     st.dataframe(df2[cols], use_container_width=True, height=600)
 
-# ============================================================
-# END OF APP (Part 5)
-# ============================================================
+
 
