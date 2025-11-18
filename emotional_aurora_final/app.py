@@ -984,24 +984,7 @@ use_csv = st.sidebar.checkbox(
     key="use_csv_palette"
 )
 
-with st.sidebar.expander("Import / Export Palette CSV", True):
-    up = st.file_uploader("Import CSV", type=["csv"])
-    if up is not None:
-        import_palette_csv(up)
 
-    # palette = ONLY custom_palette when CSV mode is enabled
-    pal = dict(st.session_state.get("custom_palette", {}))
-
-    if pal:
-        df_pal = pd.DataFrame([
-            {"emotion":k, "r":v[0], "g":v[1], "b":v[2]} for k,v in pal.items()
-        ])
-        st.dataframe(df_pal, use_container_width=True)
-
-        dl = export_palette_csv(pal)
-        st.download_button("Download CSV", data=dl, file_name="palette.csv", mime="text/csv")
-    else:
-        st.info("No palette loaded. Please import a CSV.")
 
 # =========================
 # Sidebar — Reset Button
