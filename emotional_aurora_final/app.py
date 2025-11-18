@@ -962,51 +962,59 @@ use_csv = st.sidebar.checkbox(
 )
 
 with st.sidebar.expander("Add Custom Emotion", False):
-    col1, col2, col3, col4 = st.columns([1.6, 1, 1, 1])
-    emo_name = col1.text_input("Emotion Name")
-    r = col2.number_input("R", 0, 255, 180)
-    g = col3.number_input("G", 0, 255, 180)
-    b = col4.number_input("B", 0, 255, 200)
 
-    # -------- ADD COLOR --------
-    if st.button("Add Color"):
-        add_custom_emotion(emo_name, r, g, b)
-
-    # -------- SHOW ADDED COLORS + DELETE --------
-    custom_pal = st.session_state.get("custom_palette", {})
-
-    if custom_pal:
-        st.markdown("### Added Colors")
-
-        # For deletion
-        to_delete = st.multiselect(
-            "Select emotions to delete",
-            options=list(custom_pal.keys()),
-            format_func=lambda e: f"{e}  RGB{custom_pal[e]}"
-        )
-
-        delete_btn = st.button("Delete Selected")
-
-        if delete_btn and to_delete:
-            for emo in to_delete:
-                st.session_state["custom_palette"].pop(emo, None)
-            st.experimental_rerun()
-
-        # Color preview grid
-        for emo, (rr, gg, bb) in custom_pal.items():
-            colA, colB = st.columns([0.45, 0.55])
-            with colA:
-                st.markdown(f"**{emo}**  \nRGB: ({rr}, {gg}, {bb})")
-            with colB:
-                st.color_picker(
-                    label=f"Preview {emo}",
-                    value=f"#{rr:02x}{gg:02x}{bb:02x}",
-                    key=f"{emo}_preview",
-                    disabled=True
-                )
-
+    # If CSV-only mode is enabled → completely disable custom palette UI
+    if st.session_state.get("use_csv_palette", False):
+        st.info("CSV palette only mode is enabled.\nCustom colors are disabled.")
     else:
-        st.markdown("*No custom colors added yet.*")
+        # Custom palette mode is active
+        col1, col2, col3, col4 = st.columns([1.6, 1, 1, 1])
+        emo_name = col1.text_input("Emotion Name")
+        r = col2.number_input("R", 0, 255, 180)
+        g = col3.number_input("G", 0, 255, 180)
+        b = col4.number_input("B", 0, 255, 200)
+
+        if st.button("Add Color"):
+            add_custom_emotion(emo_name, r, g, b)
+
+        # -------------------------
+        # FILTER OUT crystal_xx EMOTIONS
+        # -------------------------
+        custom_pal = {
+            k: v for k, v in st.session_state.get("custom_palette", {}).items()
+            if not k.startswith("crystal_")
+        }
+
+        if custom_pal:
+            st.markdown("### Added Colors")
+
+            # Multi-delete (crystal_xxx already removed)
+            to_delete = st.multiselect(
+                "Select emotions to delete",
+                options=list(custom_pal.keys()),
+                format_func=lambda e: f"{e}  RGB{custom_pal[e]}"
+            )
+
+            if st.button("Delete Selected") and to_delete:
+                for emo in to_delete:
+                    st.session_state["custom_palette"].pop(emo, None)
+                st.experimental_rerun()
+
+            # Preview grid
+            for emo, (rr, gg, bb) in custom_pal.items():
+                colA, colB = st.columns([0.45, 0.55])
+                with colA:
+                    st.markdown(f"**{emo}**  \nRGB: ({rr}, {gg}, {bb})")
+                with colB:
+                    st.color_picker(
+                        label=f"Preview {emo}",
+                        value=f"#{rr:02x}{gg:02x}{bb:02x}",
+                        key=f"{emo}_preview",
+                        disabled=True
+                    )
+        else:
+            st.markdown("*No custom colors added yet.*")
+
 
 
 
