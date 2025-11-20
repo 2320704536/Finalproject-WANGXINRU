@@ -1005,7 +1005,29 @@ with left:
     st.subheader("❄️ Crystal Mix Visualization")
 
    
+    working_palette = get_active_palette()
+# ==========================================
+# CSV-ONLY MODE: force df to use custom palette keys
+# ==========================================
+if st.session_state.get("use_csv_palette", False):
+  # ==========================================================
+# CSV-ONLY MODE — FULL FIX
+# ==========================================================
+if st.session_state.get("use_csv_palette", False):
 
+    pal = list(working_palette.keys())
+
+    if len(pal) == 0:
+        st.warning("CSV palette only mode enabled, but no custom colors found.")
+    else:
+        # ❶ 跳过 emotion filtering
+        df = df.copy().reset_index(drop=True)
+
+        # ❷ 每条记录循环分配 palette 颜色（真正均匀）
+        df["emotion"] = [pal[i % len(pal)] for i in range(len(df))]
+
+        # ❸ 不做 emotion 过滤，不做 top3，不做 multiselect
+        selected_emotions = pal[:]   # 全部使用 palette 颜色
 
 
     # ❄️ Crystal Mix Render
@@ -1114,6 +1136,3 @@ with right:
         cols.insert(2, "source")
 
     st.dataframe(df2[cols], use_container_width=True, height=600)
-
-
-
