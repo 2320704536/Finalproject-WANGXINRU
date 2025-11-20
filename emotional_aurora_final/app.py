@@ -573,10 +573,11 @@ def auto_brightness_compensation(
 st.sidebar.header("1) Data Source (NewsAPI)")
 keyword = st.sidebar.text_input(
     "Keyword (e.g., AI, aurora, science)",
-    value=st.session_state.get("keyword", DEFAULTS["keyword"]),
+    value=st.session_state.get("keyword", ""),
     key="keyword",
     placeholder="e.g., AI"
 )
+
 fetch_btn = st.sidebar.button("Fetch News")
 random_btn = st.sidebar.button("Random Generate (Crystal Mode)")
 
