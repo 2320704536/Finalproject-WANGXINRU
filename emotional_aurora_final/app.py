@@ -260,9 +260,6 @@ def jitter_color(rgb01, rng, amount=0.06):
     c = np.clip(np.array(rgb01)+j, 0, 1)
     return tuple(c.tolist())
 
-# =========================
-# Render Ice-Crystal Mix (❄️ NEW)
-# =========================
 def render_crystalmix(
     df, palette,
     width=1500, height=850, seed=12345,
@@ -270,8 +267,8 @@ def render_crystalmix(
     min_size=60, max_size=220,
     fill_alpha=210, blur_px=6,
     bg_color=(0,0,0),
-    wobble=0.25,            # ← NEW
-    layers=10               # ← NEW
+    wobble=0.25,
+    layers=10
 ):
     rng = np.random.default_rng(seed)
     base = Image.new("RGBA", (width, height), (bg_color[0], bg_color[1], bg_color[2], 255))
@@ -281,61 +278,57 @@ def render_crystalmix(
     if not emotions:
         emotions = ["joy","love","curiosity"]
 
-    # NEW: layers multiplier
-    total_layers = layers
+    for _layer in range(layers):
 
-    for _layer in range(total_layers):        # ← loop more layers
         for emo in emotions:
 
-            # ★ CSV-only mode → 禁止 fallback，必须使用 CSV color
-# ★ 1) 在 CSV-only 模式中严格使用 CSV 颜色，不允许 fallback
-if st.session_state.get("use_csv_palette", False):
-    base_rgb = palette[emo]     # 精确 CSV 颜色
-else:
-    base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
+            # ★ 1) 颜色选择（CSV 模式强制使用 CSV 颜色）
+            if st.session_state.get("use_csv_palette", False):
+                base_rgb = palette[emo]     # 100% 精确 CSV
+            else:
+                base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
 
+            # ★ 2) vibrancy / luma 修正（CSV 模式禁用）
+            if st.session_state.get("use_csv_palette", False):
+                base01 = np.array(base_rgb) / 255.0
+            else:
+                base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
 
-# CSV-only 模式完全禁用 vibrancy 和 luma 提亮
-if st.session_state.get("use_csv_palette", False):
-    base01 = np.array(base_rgb) / 255.0
-else:
-    base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
+            # ★ 3) 生成多碎片
+            for _ in range(max(1, int(shapes_per_emotion))):
 
+                cx = rng.uniform(0.05*width, 0.95*width)
+                cy = rng.uniform(0.08*height, 0.92*height)
+                rr = int(rng.uniform(min_size, max_size))
 
+                pts = crystal_shape(
+                    center=(cx, cy),
+                    r=rr,
+                    wobble=wobble,
+                    sides_min=5,
+                    sides_max=10,
+                    rng=rng
+                )
 
-# ★ 3) 生成 crystal shapes
-for _ in range(max(1, int(shapes_per_emotion))):
+                # ★ 4) jitter (CSV 模式禁用)
+                if st.session_state.get("use_csv_palette", False):
+                    col01 = base01
+                else:
+                    col01 = jitter_color(base01, rng, amount=0.07)
 
-    cx = rng.uniform(0.05*width, 0.95*width)
-    cy = rng.uniform(0.08*height, 0.92*height)
-    rr = int(rng.uniform(min_size, max_size))
+                local_alpha = int(np.clip(fill_alpha * rng.uniform(0.85, 1.05), 40, 255))
+                local_blur = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
+                edge_w = 0 if rng.random() < 0.6 else max(1, int(rr * 0.02))
 
-    pts = crystal_shape(
-        center=(cx, cy),
-        r=rr,
-        wobble=wobble,
-        sides_min=5,
-        sides_max=10,
-        rng=rng
-    )
+                draw_polygon_soft(
+                    canvas, pts, col01,
+                    fill_alpha=local_alpha,
+                    blur_px=local_blur,
+                    edge_width=edge_w
+                )
 
-    # ★ 4) CSV-only 模式：禁止 jitter，保持颜色 100% 准确
-    if st.session_state.get("use_csv_palette", False):
-        col01 = base01
-    else:
-        col01 = jitter_color(base01, rng, amount=0.07)
-
-    # 透明度 / 模糊
-    local_alpha = int(np.clip(fill_alpha * rng.uniform(0.85, 1.05), 40, 255))
-    local_blur = max(0, int(blur_px * rng.uniform(0.7, 1.4)))
-    edge_w = 0 if rng.random() < 0.6 else max(1, int(rr * 0.02))
-
-    draw_polygon_soft(
-        canvas, pts, col01,
-        fill_alpha=local_alpha,
-        blur_px=local_blur,
-        edge_width=edge_w
-    )
+    base.alpha_composite(canvas)
+    return base.convert("RGB")
 
 
 # =========================
