@@ -652,47 +652,7 @@ def reset_all():
     st.rerun()
 
 
-# =========================
-# Sidebar — CSV Palette Section
-# =========================
-st.sidebar.header("6) Custom Palette (CSV)")
 
-use_csv = st.sidebar.checkbox(
-    "Use CSV palette only",
-    value=st.session_state.get("use_csv_palette", False),
-    key="use_csv_palette"
-)
-
-with st.sidebar.expander("Add Custom Emotion (manual RGB)", False):
-    col1, col2, col3, col4 = st.columns([1.6,1,1,1])
-    emo_name = col1.text_input("Emotion Name")
-    r = col2.number_input("R", 0, 255, 180)
-    g = col3.number_input("G", 0, 255, 180)
-    b = col4.number_input("B", 0, 255, 200)
-
-    if st.button("Add Color"):
-        add_custom_emotion(emo_name, r, g, b)
-
-with st.sidebar.expander("Import / Export Palette CSV", False):
-    up = st.file_uploader("Import CSV", type=["csv"])
-    if up is not None:
-        import_palette_csv(up)
-
-    working = dict(DEFAULT_RGB)
-    working.update(st.session_state.get("custom_palette", {}))
-
-    if st.session_state.get("use_csv_palette", False):
-        working = dict(st.session_state.get("custom_palette", {}))
-
-    if working:
-        df_pal = pd.DataFrame(
-            [{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in working.items()]
-        )
-        st.dataframe(df_pal, use_container_width=True)
-
-        dl = export_palette_csv(working)
-        st.download_button("Download CSV", data=dl,
-                           file_name="palette.csv", mime="text/csv")
 # =========================================================
 # Sidebar — Data Source (NewsAPI)
 # =========================================================
@@ -949,6 +909,47 @@ abc_white = st.sidebar.slider("White Point %", 0.80, 1.00,
 abc_max_gain = st.sidebar.slider("Max Gain", 1.0, 3.0,
                                  st.session_state.get("abc_max_gain", DEFAULTS["abc_max_gain"]))
 
+# =========================
+# Sidebar — CSV Palette Section
+# =========================
+st.sidebar.header("6) Custom Palette (CSV)")
+
+use_csv = st.sidebar.checkbox(
+    "Use CSV palette only",
+    value=st.session_state.get("use_csv_palette", False),
+    key="use_csv_palette"
+)
+
+with st.sidebar.expander("Add Custom Emotion (manual RGB)", False):
+    col1, col2, col3, col4 = st.columns([1.6,1,1,1])
+    emo_name = col1.text_input("Emotion Name")
+    r = col2.number_input("R", 0, 255, 180)
+    g = col3.number_input("G", 0, 255, 180)
+    b = col4.number_input("B", 0, 255, 200)
+
+    if st.button("Add Color"):
+        add_custom_emotion(emo_name, r, g, b)
+
+with st.sidebar.expander("Import / Export Palette CSV", False):
+    up = st.file_uploader("Import CSV", type=["csv"])
+    if up is not None:
+        import_palette_csv(up)
+
+    working = dict(DEFAULT_RGB)
+    working.update(st.session_state.get("custom_palette", {}))
+
+    if st.session_state.get("use_csv_palette", False):
+        working = dict(st.session_state.get("custom_palette", {}))
+
+    if working:
+        df_pal = pd.DataFrame(
+            [{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in working.items()]
+        )
+        st.dataframe(df_pal, use_container_width=True)
+
+        dl = export_palette_csv(working)
+        st.download_button("Download CSV", data=dl,
+                           file_name="palette.csv", mime="text/csv")
 
 # =========================================================
 # Output Control (Reset)
