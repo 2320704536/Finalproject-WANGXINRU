@@ -177,13 +177,10 @@ def init_palette_state():
 
 def get_active_palette():
     if st.session_state.get("use_csv_palette", False):
-        # CSV-only 模式 → 只用 custom_palette
         return dict(st.session_state.get("custom_palette", {}))
-    # 默认：DEFAULT_RGB + custom
     merged = dict(DEFAULT_RGB)
     merged.update(st.session_state.get("custom_palette", {}))
     return merged
-
 
 def add_custom_emotion(name, r, g, b):
     if not name: return
@@ -731,30 +728,11 @@ selected_labels = st.sidebar.multiselect(
     default=default_labels
 )
 
-# =========================
-# Selected Emotions (Disabled in CSV-only)
-# =========================
+selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
 
-if st.session_state.get("use_csv_palette", False):
-    st.sidebar.write("Selected Emotions (disabled in CSV-only mode)")
-    selected_emotions = df["emotion"].unique().tolist()   # 全部保留
-else:
-    option_labels = [_label_emotion(e) for e in available_emotions]
-    default_labels = [_label_emotion(e) for e in (top3 if top3 else available_emotions)]
-
-    selected_labels = st.sidebar.multiselect(
-        "Selected Emotions",
-        option_labels,
-        default=default_labels
-    )
-    selected_emotions = [lbl.split(" (")[0] for lbl in selected_labels]
-
-df = df[
-    (df["emotion"].isin(selected_emotions)) &
-    (df["compound"] >= cmp_min) &
-    (df["compound"] <= cmp_max)
-]
-
+df = df[(df["emotion"].isin(selected_emotions))
+        & (df["compound"] >= cmp_min)
+        & (df["compound"] <= cmp_max)]
 
 # =========================
 # Auto Seed Init (NEW)
@@ -977,14 +955,36 @@ abc_max_gain = st.sidebar.slider(
 # =========================
 st.sidebar.header("6) Custom Palette (RGB)")
 
-# CSV palette only toggle
 use_csv = st.sidebar.checkbox(
     "Use CSV palette only",
     value=st.session_state.get("use_csv_palette", False),
     key="use_csv_palette"
 )
 
+with st.sidebar.expander("Add Custom Emotion", False):
+    col1,col2,col3,col4 = st.columns([1.6,1,1,1])
+    emo_name = col1.text_input("Emotion Name")
+    r = col2.number_input("R",0,255,180)
+    g = col3.number_input("G",0,255,180)
+    b = col4.number_input("B",0,255,200)
+    if st.button("Add Color"):
+        add_custom_emotion(emo_name, r, g, b)
 
+with st.sidebar.expander("Import / Export Palette CSV", False):
+    up = st.file_uploader("Import CSV", type=["csv"])
+    if up is not None:
+        import_palette_csv(up)
+
+    pal = dict(DEFAULT_RGB)
+    pal.update(st.session_state.get("custom_palette", {}))
+    if st.session_state.get("use_csv_palette", False):
+        pal = dict(st.session_state.get("custom_palette", {}))
+
+    if pal:
+        df_pal = pd.DataFrame([{"emotion":k,"r":v[0],"g":v[1],"b":v[2]} for k,v in pal.items()])
+        st.dataframe(df_pal, use_container_width=True)
+        dl = export_palette_csv(pal)
+        st.download_button("Download CSV", data=dl, file_name="palette.csv", mime="text/csv")
 
 # =========================
 # Sidebar — Reset Button
@@ -1004,31 +1004,7 @@ with left:
 
     st.subheader("❄️ Crystal Mix Visualization")
 
-   
     working_palette = get_active_palette()
-# ==========================================
-# CSV-ONLY MODE: force df to use custom palette keys
-# ==========================================
-if st.session_state.get("use_csv_palette", False):
-  # ==========================================================
-# CSV-ONLY MODE — FULL FIX
-# ==========================================================
-if st.session_state.get("use_csv_palette", False):
-
-    pal = list(working_palette.keys())
-
-    if len(pal) == 0:
-        st.warning("CSV palette only mode enabled, but no custom colors found.")
-    else:
-        # ❶ 跳过 emotion filtering
-        df = df.copy().reset_index(drop=True)
-
-        # ❷ 每条记录循环分配 palette 颜色（真正均匀）
-        df["emotion"] = [pal[i % len(pal)] for i in range(len(df))]
-
-        # ❸ 不做 emotion 过滤，不做 top3，不做 multiselect
-        selected_emotions = pal[:]   # 全部使用 palette 颜色
-
 
     # ❄️ Crystal Mix Render
     img = render_crystalmix(
