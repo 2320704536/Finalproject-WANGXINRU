@@ -295,8 +295,12 @@ else:
     base_rgb = palette.get(emo, palette.get("mixed", (230,190,110)))
 
 
-# ★ 2) 增强亮度（保留 vibrancy，但可以根据你需要关闭）
-base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
+# CSV-only 模式完全禁用 vibrancy 和 luma 提亮
+if st.session_state.get("use_csv_palette", False):
+    base01 = np.array(base_rgb) / 255.0
+else:
+    base01 = vibrancy_boost(base_rgb, sat_boost=1.30, min_luma=0.40)
+
 
 
 # ★ 3) 生成 crystal shapes
@@ -1050,7 +1054,32 @@ else:
     # ==========================================
     # Convert PIL → NumPy
     # ==========================================
-    arr = np.array(img).astype(np.float32) / 255.0
+    # ==========================================
+# Convert PIL → NumPy
+# ==========================================
+arr = np.array(img).astype(np.float32) / 255.0
+
+# =====================================================
+# STRICT CSV COLOR MODE (NO POST-PROCESSING AT ALL)
+# =====================================================
+if st.session_state.get("use_csv_palette", False):
+    final_img = Image.fromarray((np.clip(arr,0,1) * 255).astype(np.uint8))
+
+    buf = BytesIO()
+    final_img.save(buf, format="PNG")
+    buf.seek(0)
+
+    st.image(final_img, use_column_width=True)
+    st.download_button(
+        "💾 Download PNG (True CSV Color — No Post FX)",
+        data=buf,
+        file_name="crystal_mix_truecolor.png",
+        mime="image/png"
+    )
+
+    # IMPORTANT: stop execution → skip all post-processing
+    st.stop()
+    
 
     # Linear space
     lin = srgb_to_linear(arr)
