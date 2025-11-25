@@ -74,32 +74,33 @@ def load_vader():
 sia = load_vader()
 
 # =========================
-# News API
+# News API (FIXED VERSION)
 # =========================
 def fetch_news(api_key, keyword="technology", page_size=50):
     url = "https://newsapi.org/v2/everything"
     params = {
-        "q": keyword, "language": "en", "sortBy": "publishedAt",
-        "pageSize": page_size, "apiKey": api_key,
+        "q": keyword,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": page_size,
+        "apiKey": api_key,
     }
     try:
         resp = requests.get(url, params=params, timeout=12)
         data = resp.json()
+
         if data.get("status") != "ok":
             st.warning("NewsAPI error: " + str(data.get("message")))
-            return pd.DataFrame()
-        rows = []
-        for a in data.get("articles", []):
-            txt = (a.get("title") or "") + " - " + (a.get("description") or "")
-            rows.append({
-                "timestamp": (a.get("publishedAt") or "")[:10],
-                "text": txt.strip(" -"),
-                "source": (a.get("source") or {}).get("name", "")
-            })
-        return pd.DataFrame(rows)
+            return [], pd.DataFrame()   # ← FIX: always return 2 values
+
+        articles = data.get("articles", [])
+
+        return articles, pd.DataFrame()   # ← FIX: return list + placeholder df
+
     except Exception as e:
         st.error(f"Error fetching NewsAPI: {e}")
-        return pd.DataFrame()
+        return [], pd.DataFrame()   # ← FIX: return 2 objects always
+
 # ================================================================
 # Article → DataFrame + Recommendation Score System
 # ================================================================
