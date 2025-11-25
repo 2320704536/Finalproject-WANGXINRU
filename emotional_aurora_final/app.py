@@ -1158,43 +1158,21 @@ with left:
 
 
 # =========================================================
-# RIGHT COLUMN — Data Table
+# RIGHT COLUMN — Combined Outputs (Sorted Order)
 # =========================================================
 with right:
-    st.subheader("📊 Data & Emotion Mapping")
 
-    df2 = df.copy()
-    df2["emotion_display"] = df2["emotion"].apply(
-        lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
-    )
+    # ---------------------------------------------------------
+    # 1️⃣ TOP RECOMMENDATIONS → FIRST
+    # ---------------------------------------------------------
+    if "df_articles" in st.session_state:
+        st.subheader("⭐ Top Recommendations")
 
-    cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
+        dfA = st.session_state["df_articles"]
+        topN = dfA.sort_values("score_norm", ascending=False).head(5)
 
-    if "timestamp" in df.columns:
-        cols.insert(1, "timestamp")
-    if "source" in df.columns:
-        cols.insert(2, "source")
-
-    st.dataframe(df2[cols], use_container_width=True, height=600)
-    # =========================================================
-# NEW: Article Recommendation Section
-# =========================================================
-
-if "df_articles" in st.session_state:
-    st.subheader("🗞 Article Analysis → DataFrame")
-
-    dfA = st.session_state["df_articles"]
-    st.dataframe(dfA, use_container_width=True)
-
-    # -------------------------------
-    # Top Recommendations (Glass Cards)
-    # -------------------------------
-    st.subheader("⭐ Top Recommendations")
-
-    topN = dfA.sort_values("score_norm", ascending=False).head(5)
-
-    for _, row in topN.iterrows():
-        st.markdown(f"""
+        for _, row in topN.iterrows():
+            st.markdown(f"""
 <div style="
     background: rgba(255,255,255,0.08);
     padding: 18px;
@@ -1213,17 +1191,51 @@ if "df_articles" in st.session_state:
 </div>
 """, unsafe_allow_html=True)
 
-    # -------------------------------
-    # Bar Chart: Articles by Source
-    # -------------------------------
-    st.subheader("📊 Articles by Source")
 
-    df_count = dfA.groupby("source").size().reset_index(name="count")
+    # ---------------------------------------------------------
+    # 2️⃣ ARTICLE ANALYSIS → DATAFRAME
+    # ---------------------------------------------------------
+    if "df_articles" in st.session_state:
+        st.subheader("🗞 Article Analysis → DataFrame")
+        st.dataframe(dfA, use_container_width=True, height=350)
 
-    fig = px.bar(df_count, x="source", y="count",
-                 title="Articles by Source",
-                 color="count",
-                 color_continuous_scale="Blues")
+
+    # ---------------------------------------------------------
+    # 3️⃣ DATA & EMOTION MAPPING
+    # ---------------------------------------------------------
+    st.subheader("📊 Data & Emotion Mapping")
+
+    df2 = df.copy()
+    df2["emotion_display"] = df2["emotion"].apply(
+        lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
+    )
+
+    cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
+    if "timestamp" in df.columns:
+        cols.insert(1, "timestamp")
+    if "source" in df.columns:
+        cols.insert(2, "source")
+
+    st.dataframe(df2[cols], use_container_width=True, height=350)
+
+
+    # ---------------------------------------------------------
+    # 4️⃣ ARTICLES BY SOURCE (Bar Chart → Last)
+    # ---------------------------------------------------------
+    if "df_articles" in st.session_state:
+        st.subheader("📊 Articles by Source")
+
+        df_count = dfA.groupby("source").size().reset_index(name="count")
+
+        fig = px.bar(
+            df_count, x="source", y="count",
+            title="Articles by Source",
+            color="count",
+            color_continuous_scale="Blues"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
 
     st.plotly_chart(fig, use_container_width=True)
 
