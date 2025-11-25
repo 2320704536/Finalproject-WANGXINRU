@@ -26,39 +26,120 @@ with st.expander("📘 Instructions", expanded=False):
     st.markdown("""
 ### 📘 How to Use
 
-This app creates **crystal-style visuals** using:
-
-#### 1. 📰 NewsAPI (emotion from news)
-- Enter your NewsAPI key in Secrets
-- Input a keyword
-- News → Sentiment → Emotion → Crystal colors
-
-#### 2. 🎲 Random Crystal Mode
-Generates random emotion labels + random colors for abstract visuals.
-
-#### 3. 🎨 CSV Color Palette
-- Import your own palette (emotion, r, g, b)
-- Enable **CSV-only mode** → all colors come ONLY from your CSV  
-  (no default colors, no fallback)
-
-You can also manually add colors and export your palette.
-
-#### 4. ❄️ Crystal Controls
-Layers • crystal count • blur • size • wobble • seed • background color
-
-#### 5. 🎞 Cinematic Color
-Exposure • contrast • saturation • gamma • white balance  
-split tone • bloom • vignette • auto brightness
-
-#### 6. 💾 Export
-Download final crystal image (PNG)  
-Download current palette (CSV)
-
-Enjoy exploring emotion × color × cinematic visuals.
-
+This app transforms **news + emotions + colors** into a cinematic **crystal visualization** and a set of analytic views and article recommendations.
 
 ---
+
+## 1️⃣ Data Source (NewsAPI & Random Mode)
+
+### 📰 NewsAPI Mode
+- Add your **NEWS_API_KEY** in Streamlit Secrets  
+- Enter a keyword (e.g. `AI`, `finance`, `aurora`) in the sidebar  
+- Click **Fetch News**  
+- The app will:
+  - retrieve related news articles
+  - extract `source / author / title / description / url / publishedAt`
+  - run sentiment analysis (`pos / neu / neg / compound`)
+  - map each item to an **emotion label**
+  - compute a **recommendation score** and normalize it to **0–100**
+
+### 🎲 Random Crystal Mode
+- Click **Random Generate (Crystal Mode)**  
+- Creates abstract visuals using random text, random emotion labels, and random RGB colors (no real news involved).
+
+---
+
+## 2️⃣ Crystal Mix Visualization (Top Section)
+
+At the top of the page you see the main **Crystal Mix Visualization**:
+
+- Each text item (news or random) is mapped to an emotion  
+- Each emotion corresponds to a color (from the default palette or your CSV palette)  
+- Colors are rendered as multiple soft polygon “crystal fragments”  
+- Layers of fragments are stacked to form the final image  
+
+You can control in the sidebar:
+- number of layers  
+- crystals per emotion  
+- softness / blur / alpha  
+- min & max size of fragments  
+- wobble (shape irregularity)  
+- random seed  
+- solid background color  
+
+---
+
+## 3️⃣ Emotion & Color Controls
+
+### Emotion Mapping
+- Sentiment scores are mapped to extended emotion labels (e.g. **joy, calm, awe, anxiety, pride, sadness, mixed**).
+- In the **Emotion Mapping** section you can:
+  - filter by compound score range  
+  - auto-select the top-3 most frequent emotions  
+  - manually choose which emotions to keep in the visualization  
+
+### CSV Color Palette
+- Import your own CSV palette with columns: `emotion, r, g, b`  
+- Turn on **Use CSV palette only** to rely **only** on your custom colors  
+- Manually add new emotion–RGB entries  
+- Export the current working palette as a CSV file  
+
+---
+
+## 4️⃣ Cinematic Color Grading
+
+After the crystal image is rendered, a film-style color grading pipeline is applied:
+
+- **Exposure, Contrast, Saturation, Gamma**  
+- **White Balance** (temperature & tint)  
+- **Split Toning** for shadows and highlights  
+- **Highlight roll-off** for softer bright areas  
+- **Bloom** (glow) and **Vignette**  
+- **Auto Brightness Compensation** to avoid overly dark or blown-out results  
+
+These controls give the image a more cinematic and polished look.
+
+---
+
+## 5️⃣ Analysis & Recommendations (Below the Crystal Image)
+
+Below the Crystal Mix Visualization, the app shows four sections in this order:
+
+1. **⭐ Top Recommendations**  
+   - Each article gets a recommendation score based on:  
+     - recency (freshness time windows: <6h, <24h, <72h, <7d, older)  
+     - title length bonus if between 40–100 characters  
+     - keyword match in title or description  
+   - Scores are normalized to **0–100**  
+   - The top articles are displayed as glass-style cards with:  
+     - title, summary, source, publish time, score, and a link
+
+2. **📊 Data & Emotion Mapping**  
+   - A table of all items currently used in the crystal, including:  
+     - text  
+     - timestamp / source (if available)  
+     - emotion label + color name  
+     - sentiment scores (compound / pos / neu / neg)
+
+3. **🗞 Article Analysis → DataFrame**  
+   - A structured view of parsed articles, showing:  
+     - source, author, title, description, url, publishedAt  
+     - raw recommendation score and normalized score (0–100)
+
+4. **📊 Articles by Source**  
+   - A Plotly bar chart counting how many articles come from each source  
+   - Helps you see which media outlets dominate for the chosen keyword.
+
+---
+
+## 6️⃣ Export
+
+- Use **💾 Download PNG** to save the final crystal image  
+- Use **Download CSV** in the palette section to save the current color palette  
+
+Enjoy exploring the intersection of **news, emotion, color, and cinematic visual design** ✨
 """)
+
 
 # =========================
 # VADER (Sentiment)
