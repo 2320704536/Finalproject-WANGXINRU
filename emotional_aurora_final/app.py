@@ -1155,87 +1155,85 @@ with left:
         mime="image/png"
     )
 
-
-
 # =========================================================
-# RIGHT COLUMN — Combined Outputs (Sorted Order)
+# FULL-WIDTH SECTION BELOW CRYSTAL IMAGE
 # =========================================================
-with right:
+st.markdown("---")
 
-    # ---------------------------------------------------------
-    # 1️⃣ TOP RECOMMENDATIONS → FIRST
-    # ---------------------------------------------------------
-    if "df_articles" in st.session_state:
-        st.subheader("⭐ Top Recommendations")
+# ---------------------------------------------------------
+# 1️⃣ Top Recommendations
+# ---------------------------------------------------------
+if "df_articles" in st.session_state:
+    st.subheader("⭐ Top Recommendations")
 
-        dfA = st.session_state["df_articles"]
-        topN = dfA.sort_values("score_norm", ascending=False).head(5)
+    dfA = st.session_state["df_articles"]
+    topN = dfA.sort_values("score_norm", ascending=False).head(5)
 
-        for _, row in topN.iterrows():
-            st.markdown(f"""
+    for _, row in topN.iterrows():
+        st.markdown(f"""
 <div style="
-    background: rgba(255,255,255,0.08);
-    padding: 18px;
-    border-radius: 12px;
-    margin-bottom: 12px;
-    backdrop-filter: blur(12px);
+    background: rgba(255,255,255,0.10);
+    padding: 20px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.15);
 ">
-<h3 style="margin:0;">{row.title}</h3>
-<p>{row.description}</p>
-<b>Source:</b> {row.source}  
-<b>Published:</b> {row.publishedAt.strftime('%Y-%m-%d %H:%M')}  
+<h3 style="margin:0; color:white">{row.title}</h3>
+<p style="color:#dddddd">{row.description}</p>
+<b style="color:#aaaaaa">Source:</b> {row.source}  
 <br>
-<b>Score:</b> {row.score:.2f} (Normalized: {row.score_norm:.1f})  
+<b style="color:#aaaaaa">Published:</b> {row.publishedAt.strftime('%Y-%m-%d %H:%M')}  
+<br>
+<b style="color:#aaaaaa">Score:</b> {row.score:.2f} (Norm: {row.score_norm:.1f})  
 <br>
 <a href="{row.url}" target="_blank">🔗 Read article</a>
 </div>
 """, unsafe_allow_html=True)
 
 
-    # ---------------------------------------------------------
-    # 2️⃣ ARTICLE ANALYSIS → DATAFRAME
-    # ---------------------------------------------------------
-    if "df_articles" in st.session_state:
-        st.subheader("🗞 Article Analysis → DataFrame")
-        st.dataframe(dfA, use_container_width=True, height=350)
+# ---------------------------------------------------------
+# 2️⃣ Data & Emotion Mapping
+# ---------------------------------------------------------
+st.markdown("---")
+st.subheader("📊 Data & Emotion Mapping")
+
+df2 = df.copy()
+df2["emotion_display"] = df2["emotion"].apply(
+    lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
+)
+
+cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
+if "timestamp" in df.columns:
+    cols.insert(1, "timestamp")
+if "source" in df.columns:
+    cols.insert(2, "source")
+
+st.dataframe(df2[cols], use_container_width=True, height=400)
 
 
-    # ---------------------------------------------------------
-    # 3️⃣ DATA & EMOTION MAPPING
-    # ---------------------------------------------------------
-    st.subheader("📊 Data & Emotion Mapping")
+# ---------------------------------------------------------
+# 3️⃣ Article Analysis → DataFrame
+# ---------------------------------------------------------
+if "df_articles" in st.session_state:
+    st.markdown("---")
+    st.subheader("🗞 Article Analysis → DataFrame")
+    st.dataframe(dfA, use_container_width=True, height=400)
 
-    df2 = df.copy()
-    df2["emotion_display"] = df2["emotion"].apply(
-        lambda e: f"{e} ({COLOR_NAMES.get(e,'Custom')})"
+
+# ---------------------------------------------------------
+# 4️⃣ Articles by Source
+# ---------------------------------------------------------
+if "df_articles" in st.session_state:
+    st.markdown("---")
+    st.subheader("📊 Articles by Source")
+
+    df_count = dfA.groupby("source").size().reset_index(name="count")
+
+    fig = px.bar(
+        df_count, x="source", y="count",
+        title="Articles by Source",
+        color="count",
+        color_continuous_scale="Blues"
     )
-
-    cols = ["text", "emotion_display", "compound", "pos", "neu", "neg"]
-    if "timestamp" in df.columns:
-        cols.insert(1, "timestamp")
-    if "source" in df.columns:
-        cols.insert(2, "source")
-
-    st.dataframe(df2[cols], use_container_width=True, height=350)
-
-
-    # ---------------------------------------------------------
-    # 4️⃣ ARTICLES BY SOURCE (Bar Chart → Last)
-    # ---------------------------------------------------------
-    if "df_articles" in st.session_state:
-        st.subheader("📊 Articles by Source")
-
-        df_count = dfA.groupby("source").size().reset_index(name="count")
-
-        fig = px.bar(
-            df_count, x="source", y="count",
-            title="Articles by Source",
-            color="count",
-            color_continuous_scale="Blues"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-
     st.plotly_chart(fig, use_container_width=True)
-
