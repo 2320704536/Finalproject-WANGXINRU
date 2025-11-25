@@ -11,7 +11,9 @@ import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import requests
 from datetime import date
-import math
+import 
+import plotly.express as px
+from datetime import datetime, timezone, timedelta
 
 # =========================
 # App setup
@@ -98,6 +100,84 @@ def fetch_news(api_key, keyword="technology", page_size=50):
     except Exception as e:
         st.error(f"Error fetching NewsAPI: {e}")
         return pd.DataFrame()
+# ================================================================
+# Article → DataFrame + Recommendation Score System
+# ================================================================
+
+def parse_articles_to_df(raw_articles, keyword=""):
+    """
+    Convert NewsAPI raw article dicts into a clean DataFrame
+    with scoring + normalization.
+    """
+    rows = []
+    now = datetime.now(timezone.utc)
+
+    for a in raw_articles:
+        title = a.get("title") or ""
+        desc = a.get("description") or ""
+        published_str = a.get("publishedAt")
+
+        # Parse datetime
+        try:
+            published_dt = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+        except:
+            published_dt = now
+
+        # -------------------------------
+        # Time freshness score
+        # -------------------------------
+        hours = (now - published_dt).total_seconds() / 3600
+        if hours < 6:
+            time_score = 5
+        elif hours < 24:
+            time_score = 4
+        elif hours < 72:
+            time_score = 3
+        elif hours < 24*7:
+            time_score = 2
+        else:
+            time_score = 1
+
+        # -------------------------------
+        # Title length score
+        # -------------------------------
+        title_score = 1.5 if 40 <= len(title) <= 100 else 0
+
+        # -------------------------------
+        # Keyword match score
+        # -------------------------------
+        combine_txt = f"{title} {desc}".lower()
+        keyword_score = 2 if keyword.lower() in combine_txt and keyword else 0
+
+        total_score = time_score + title_score + keyword_score
+
+        rows.append({
+            "source": (a.get("source") or {}).get("name", ""),
+            "author": a.get("author"),
+            "title": title,
+            "description": desc,
+            "url": a.get("url"),
+            "publishedAt": published_dt,
+            "score": total_score
+        })
+
+    df = pd.DataFrame(rows)
+
+    # -------------------------------
+    # Normalize score to 0–100
+    # -------------------------------
+    if not df.empty:
+        min_s = df["score"].min()
+        max_s = df["score"].max()
+        if max_s != min_s:
+            df["score_norm"] = (df["score"] - min_s) / (max_s - min_s) * 100
+        else:
+            df["score_norm"] = 50
+    else:
+        df["score_norm"] = 0
+
+    return df
+
 
 # =========================
 # Default Emotion Colors (Used only when CSV-only = OFF)
@@ -732,7 +812,22 @@ elif fetch_btn:
     if not key:
         st.sidebar.error("Missing NEWS_API_KEY in Secrets")
     else:
-        df = fetch_news(key, keyword if keyword.strip() else "aurora")
+        raw_articles, _ = fetch_news(key, keyword if keyword.strip() else "aurora")
+
+        if raw_articles:
+            df_articles = parse_articles_to_df(raw_articles, keyword)
+            st.session_state["df_articles"] = df_articles
+
+        # original text for emotion
+        texts = [(a.get("title") or "") + ". " + (a.get("description") or "")
+                 for a in raw_articles]
+
+        df = pd.DataFrame({
+            "text": texts,
+            "timestamp": [a.get("publishedAt","")[:10] for a in raw_articles],
+            "source": [(a.get("source") or {}).get("name","") for a in raw_articles]
+        })
+
 
 
 # DEFAULT DEMO DATA
@@ -1080,3 +1175,54 @@ with right:
         cols.insert(2, "source")
 
     st.dataframe(df2[cols], use_container_width=True, height=600)
+    # =========================================================
+# NEW: Article Recommendation Section
+# =========================================================
+
+if "df_articles" in st.session_state:
+    st.subheader("🗞 Article Analysis → DataFrame")
+
+    dfA = st.session_state["df_articles"]
+    st.dataframe(dfA, use_container_width=True)
+
+    # -------------------------------
+    # Top Recommendations (Glass Cards)
+    # -------------------------------
+    st.subheader("⭐ Top Recommendations")
+
+    topN = dfA.sort_values("score_norm", ascending=False).head(5)
+
+    for _, row in topN.iterrows():
+        st.markdown(f"""
+<div style="
+    background: rgba(255,255,255,0.08);
+    padding: 18px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    backdrop-filter: blur(12px);
+">
+<h3 style="margin:0;">{row.title}</h3>
+<p>{row.description}</p>
+<b>Source:</b> {row.source}  
+<b>Published:</b> {row.publishedAt.strftime('%Y-%m-%d %H:%M')}  
+<br>
+<b>Score:</b> {row.score:.2f} (Normalized: {row.score_norm:.1f})  
+<br>
+<a href="{row.url}" target="_blank">🔗 Read article</a>
+</div>
+""", unsafe_allow_html=True)
+
+    # -------------------------------
+    # Bar Chart: Articles by Source
+    # -------------------------------
+    st.subheader("📊 Articles by Source")
+
+    df_count = dfA.groupby("source").size().reset_index(name="count")
+
+    fig = px.bar(df_count, x="source", y="count",
+                 title="Articles by Source",
+                 color="count",
+                 color_continuous_scale="Blues")
+
+    st.plotly_chart(fig, use_container_width=True)
+
